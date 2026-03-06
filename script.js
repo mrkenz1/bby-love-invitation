@@ -131,12 +131,15 @@ const adminInputs = {
   closingLine: document.getElementById("adminClosingLine")
 };
 
-let siteData = normalizeData(loadData());
+let siteData = null;
 let activeSongIndex = 0;
 let activeVideoIndex = 0;
 let adminSongDraft = [];
 let adminVideoDraft = [];
+let currentShareLinks = null;
 const isAdmin = checkAdminAccess();
+
+siteData = loadInitialSiteData();
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -146,6 +149,61 @@ function cleanText(value, fallback = "") {
   if (value === null || value === undefined) return fallback;
   const text = String(value).trim();
   return text || fallback;
+}
+
+function toBase64UrlFromUtf8(text) {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function fromBase64UrlToUtf8(token) {
+  const normalized = token.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+function encodeSnapshotToken(data) {
+  try {
+    return toBase64UrlFromUtf8(JSON.stringify(data));
+  } catch (error) {
+    return "";
+  }
+}
+
+function decodeSnapshotToken(token) {
+  try {
+    const json = fromBase64UrlToUtf8(token);
+    return JSON.parse(json);
+  } catch (error) {
+    return null;
+  }
+}
+
+function getSnapshotTokenFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    return cleanText(url.searchParams.get("s"));
+  } catch (error) {
+    return "";
+  }
+}
+
+function loadInitialSiteData() {
+  const snapshotToken = getSnapshotTokenFromUrl();
+  if (snapshotToken) {
+    const decoded = decodeSnapshotToken(snapshotToken);
+    if (decoded) return normalizeData(decoded);
+  }
+  return normalizeData(loadData());
 }
 
 function normalizeData(raw) {
@@ -386,11 +444,18 @@ function getSoundCloudEmbedUrl(trackUrl, autoPlay = false) {
   return `https://w.soundcloud.com/player/?url=${encoded}&color=%23ea2d6f&auto_play=${autoPlay ? "true" : "false"}&hide_related=false&show_comments=false&show_user=true&show_reposts=false&show_teaser=true&visual=false`;
 }
 
-function getShareLinks() {
-  const base = `${window.location.origin}${window.location.pathname}`;
+function getBasePageUrl() {
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+function getShareLinks(data = siteData) {
+  const base = getBasePageUrl();
+  const snapshotToken = encodeSnapshotToken(data);
+  const publicLink = snapshotToken ? `${base}?s=${snapshotToken}` : base;
   return {
-    publicLink: base,
-    adminLink: `${base}?admin=1`
+    publicLink,
+    adminLink: `${base}?admin=1`,
+    snapshotToken
   };
 }
 
@@ -890,9 +955,18 @@ function setQrPreview(targetUrl) {
 }
 
 function fillShareFields() {
-  const links = getShareLinks();
-  if (els.adminPublicLink) els.adminPublicLink.value = links.publicLink;
-  if (els.adminAdminLink) els.adminAdminLink.value = links.adminLink;
+  currentShareLinks = getShareLinks(siteData);
+  if (els.adminPublicLink) els.adminPublicLink.value = currentShareLinks.publicLink;
+  if (els.adminAdminLink) els.adminAdminLink.value = currentShareLinks.adminLink;
+  return currentShareLinks;
+}
+
+function refreshShareLinks(showQr = false) {
+  const links = fillShareFields();
+  if (showQr) {
+    const target = els.adminQrTarget?.value === "admin" ? links.adminLink : links.publicLink;
+    setQrPreview(target);
+  }
   return links;
 }
 
@@ -908,24 +982,26 @@ async function copyText(text, label) {
 
 function setupShareTools() {
   if (!isAdmin) return;
-  const links = fillShareFields();
-  setQrPreview(links.publicLink);
+  const links = refreshShareLinks(true);
 
   if (els.copyPublicLinkBtn) {
     els.copyPublicLinkBtn.addEventListener("click", () => {
-      copyText(links.publicLink, "Public link");
+      const latest = currentShareLinks || refreshShareLinks();
+      copyText(latest.publicLink, "Public link");
     });
   }
 
   if (els.copyAdminLinkBtn) {
     els.copyAdminLinkBtn.addEventListener("click", () => {
-      copyText(links.adminLink, "Admin link");
+      const latest = currentShareLinks || refreshShareLinks();
+      copyText(latest.adminLink, "Admin link");
     });
   }
 
   if (els.generateQrBtn) {
     els.generateQrBtn.addEventListener("click", () => {
-      const target = els.adminQrTarget?.value === "admin" ? links.adminLink : links.publicLink;
+      const latest = currentShareLinks || refreshShareLinks();
+      const target = els.adminQrTarget?.value === "admin" ? latest.adminLink : latest.publicLink;
       setQrPreview(target);
       setAdminStatus("QR updated.");
     });
@@ -1042,8 +1118,9 @@ function setupAdminPanel() {
       siteData = collectAdminFormData();
       applyData(siteData);
       saveData(siteData);
+      refreshShareLinks(true);
       setLetterOpenState(false);
-      setAdminStatus("Saved on this browser.");
+      setAdminStatus("Saved. New public snapshot link is ready.");
     });
   }
 
@@ -1055,6 +1132,7 @@ function setupAdminPanel() {
       localStorage.removeItem(STORAGE_KEY);
       applyData(siteData);
       fillAdminForm(siteData);
+      refreshShareLinks(true);
       setLetterOpenState(false);
       setAdminStatus("Reset complete.");
     });
