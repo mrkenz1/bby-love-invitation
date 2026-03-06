@@ -32,12 +32,25 @@ const DEFAULT_DATA = {
     sectionTitle: "Our Memories",
     sectionSubtitle: "A small gallery of moments that stay in my heart.",
     images: [
-      "https://picsum.photos/seed/love1/900/700",
-      "https://picsum.photos/seed/love2/900/700",
-      "https://picsum.photos/seed/love3/900/700",
-      "https://picsum.photos/seed/love4/900/700",
-      "https://picsum.photos/seed/love5/900/700",
-      "https://picsum.photos/seed/love6/900/700"
+      "./assets/user-gallery/photo-01.jpg",
+      "./assets/user-gallery/photo-02.jpg",
+      "./assets/user-gallery/photo-03.png",
+      "./assets/user-gallery/photo-04.jpg",
+      "./assets/user-gallery/photo-05.jpg",
+      "./assets/user-gallery/photo-06.jpg",
+      "./assets/user-gallery/photo-07.jpg",
+      "./assets/user-gallery/photo-08.jpg",
+      "./assets/user-gallery/photo-09.jpg",
+      "./assets/user-gallery/photo-10.jpg",
+      "./assets/user-gallery/photo-11.jpg",
+      "./assets/user-gallery/photo-12.jpg",
+      "./assets/user-gallery/photo-13.jpg",
+      "./assets/user-gallery/photo-14.jpg",
+      "./assets/user-gallery/photo-15.jpg",
+      "./assets/user-gallery/photo-16.jpg",
+      "./assets/user-gallery/photo-17.jpg",
+      "./assets/user-gallery/photo-18.jpg",
+      "./assets/user-gallery/photo-19.jpg"
     ]
   },
   video: {
