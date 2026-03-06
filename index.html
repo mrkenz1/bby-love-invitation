@@ -181,7 +181,31 @@
           <span>Songs (format: Song | Artist, one line each)</span>
           <textarea id="adminSongsList" rows="5"></textarea>
         </label>
-        <label class="admin-field"><span>Music URL (YouTube or mp3 link)</span><input id="adminMusicUrl" type="url" /></label>
+        <label class="admin-field"><span>Music URL (YouTube, SoundCloud, or mp3 link)</span><input id="adminMusicUrl" type="url" /></label>
+      </div>
+
+      <div class="admin-group">
+        <h3>Share & QR</h3>
+        <label class="admin-field"><span>Public link</span><input id="adminPublicLink" type="text" readonly /></label>
+        <label class="admin-field"><span>Admin link</span><input id="adminAdminLink" type="text" readonly /></label>
+        <div class="admin-inline-actions">
+          <button id="copyPublicLinkBtn" class="admin-btn" type="button">Copy Public</button>
+          <button id="copyAdminLinkBtn" class="admin-btn" type="button">Copy Admin</button>
+        </div>
+        <label class="admin-field">
+          <span>QR target</span>
+          <select id="adminQrTarget">
+            <option value="public">Public link</option>
+            <option value="admin">Admin link</option>
+          </select>
+        </label>
+        <div class="admin-inline-actions">
+          <button id="generateQrBtn" class="admin-btn" type="button">Generate QR</button>
+          <a id="downloadQrBtn" class="admin-btn" href="#" download="bby-qr.png" hidden>Download QR</a>
+        </div>
+        <div class="admin-qr-preview-wrap">
+          <img id="adminQrPreview" class="admin-qr-preview" alt="QR preview" hidden />
+        </div>
       </div>
 
       <div class="admin-actions">

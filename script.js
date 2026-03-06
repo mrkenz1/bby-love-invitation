@@ -2,6 +2,7 @@ const STORAGE_KEY = "bby_site_data_v1";
 const ADMIN_SESSION_KEY = "bby_admin_v1";
 const ADMIN_PASSCODE = "bby2026";
 const HEART_COUNT = 24;
+const QR_IMAGE_ENDPOINT = "https://api.qrserver.com/v1/create-qr-code/";
 
 const DEFAULT_DATA = {
   theme: {
@@ -96,7 +97,15 @@ const els = {
   adminSaveBtn: document.getElementById("adminSaveBtn"),
   adminResetBtn: document.getElementById("adminResetBtn"),
   adminLogoutBtn: document.getElementById("adminLogoutBtn"),
-  adminStatus: document.getElementById("adminStatus")
+  adminStatus: document.getElementById("adminStatus"),
+  adminPublicLink: document.getElementById("adminPublicLink"),
+  adminAdminLink: document.getElementById("adminAdminLink"),
+  copyPublicLinkBtn: document.getElementById("copyPublicLinkBtn"),
+  copyAdminLinkBtn: document.getElementById("copyAdminLinkBtn"),
+  adminQrTarget: document.getElementById("adminQrTarget"),
+  generateQrBtn: document.getElementById("generateQrBtn"),
+  downloadQrBtn: document.getElementById("downloadQrBtn"),
+  adminQrPreview: document.getElementById("adminQrPreview")
 };
 
 const adminInputs = {
@@ -335,9 +344,40 @@ function getYoutubeEmbedUrl(videoId) {
   return `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`;
 }
 
+function isSoundCloudUrl(url) {
+  const raw = cleanText(url);
+  if (!raw) return false;
+
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    return host === "soundcloud.com" || host === "m.soundcloud.com" || host === "on.soundcloud.com";
+  } catch (error) {
+    return false;
+  }
+}
+
+function getSoundCloudEmbedUrl(trackUrl) {
+  const encoded = encodeURIComponent(trackUrl);
+  return `https://w.soundcloud.com/player/?url=${encoded}&color=%23ea2d6f&auto_play=false&hide_related=false&show_comments=false&show_user=true&show_reposts=false&show_teaser=true&visual=false`;
+}
+
+function getShareLinks() {
+  const base = `${window.location.origin}${window.location.pathname}`;
+  return {
+    publicLink: base,
+    adminLink: `${base}?admin=1`
+  };
+}
+
+function getQrImageUrl(targetUrl) {
+  return `${QR_IMAGE_ENDPOINT}?size=900x900&format=png&data=${encodeURIComponent(targetUrl)}`;
+}
+
 function resetIframe(iframe) {
   if (!iframe) return;
   iframe.style.display = "none";
+  iframe.title = "";
   iframe.removeAttribute("src");
 }
 
@@ -360,6 +400,13 @@ function updatePlayButtonMode(mode) {
     return;
   }
 
+  if (mode === "soundcloud") {
+    els.playPauseBtn.disabled = true;
+    els.playPauseBtn.textContent = "sc";
+    els.playPauseBtn.title = "Use SoundCloud player controls";
+    return;
+  }
+
   els.playPauseBtn.disabled = true;
   els.playPauseBtn.title = "Add a music URL in admin mode";
 }
@@ -369,6 +416,7 @@ function applyMedia(video, songs) {
   const musicUrl = cleanText(songs?.musicUrl);
   const videoYoutubeId = extractYoutubeId(videoUrl);
   const musicYoutubeId = extractYoutubeId(musicUrl);
+  const musicIsSoundCloud = isSoundCloudUrl(musicUrl);
 
   if (els.videoSection && els.loveVideo) {
     if (!videoUrl) {
@@ -386,6 +434,7 @@ function applyMedia(video, songs) {
       els.loveVideo.load();
 
       els.loveVideoEmbed.style.display = "block";
+      els.loveVideoEmbed.title = "YouTube video player";
       els.loveVideoEmbed.src = `${getYoutubeEmbedUrl(videoYoutubeId)}&playsinline=1`;
     } else {
       els.videoSection.classList.remove("hidden-section");
@@ -414,8 +463,22 @@ function applyMedia(video, songs) {
     els.bgMusic.load();
 
     els.bgMusicEmbed.style.display = "block";
+    els.bgMusicEmbed.title = "YouTube music player";
     els.bgMusicEmbed.src = `${getYoutubeEmbedUrl(musicYoutubeId)}&playsinline=1`;
     updatePlayButtonMode("youtube");
+    return;
+  }
+
+  if (musicIsSoundCloud && els.bgMusicEmbed) {
+    els.bgMusic.style.display = "none";
+    els.bgMusic.pause();
+    els.bgMusic.removeAttribute("src");
+    els.bgMusic.load();
+
+    els.bgMusicEmbed.style.display = "block";
+    els.bgMusicEmbed.title = "SoundCloud music player";
+    els.bgMusicEmbed.src = getSoundCloudEmbedUrl(musicUrl);
+    updatePlayButtonMode("soundcloud");
     return;
   }
 
@@ -523,6 +586,58 @@ function setAdminStatus(text, isError = false) {
   els.adminStatus.style.color = isError ? "#ac164f" : "#5f4352";
 }
 
+function setQrPreview(targetUrl) {
+  if (!els.adminQrPreview || !els.downloadQrBtn) return;
+  const qrUrl = getQrImageUrl(targetUrl);
+  els.adminQrPreview.hidden = false;
+  els.adminQrPreview.src = qrUrl;
+  els.downloadQrBtn.hidden = false;
+  els.downloadQrBtn.href = qrUrl;
+}
+
+function fillShareFields() {
+  const links = getShareLinks();
+  if (els.adminPublicLink) els.adminPublicLink.value = links.publicLink;
+  if (els.adminAdminLink) els.adminAdminLink.value = links.adminLink;
+  return links;
+}
+
+async function copyText(text, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+    setAdminStatus(`${label} copied.`);
+  } catch (error) {
+    window.prompt(`Copy this ${label.toLowerCase()}:`, text);
+    setAdminStatus(`${label} ready to copy.`);
+  }
+}
+
+function setupShareTools() {
+  if (!isAdmin) return;
+  const links = fillShareFields();
+  setQrPreview(links.publicLink);
+
+  if (els.copyPublicLinkBtn) {
+    els.copyPublicLinkBtn.addEventListener("click", () => {
+      copyText(links.publicLink, "Public link");
+    });
+  }
+
+  if (els.copyAdminLinkBtn) {
+    els.copyAdminLinkBtn.addEventListener("click", () => {
+      copyText(links.adminLink, "Admin link");
+    });
+  }
+
+  if (els.generateQrBtn) {
+    els.generateQrBtn.addEventListener("click", () => {
+      const target = els.adminQrTarget?.value === "admin" ? links.adminLink : links.publicLink;
+      setQrPreview(target);
+      setAdminStatus("QR updated.");
+    });
+  }
+}
+
 function fillAdminForm(data) {
   adminInputs.themeBg.value = data.theme.bg;
   adminInputs.themeAccent.value = data.theme.accent;
@@ -624,6 +739,7 @@ function setupAdminPanel() {
   els.adminPanel.hidden = false;
   if (els.adminBadge) els.adminBadge.hidden = false;
   fillAdminForm(siteData);
+  setupShareTools();
   setAdminStatus("Admin mode is active.");
 
   if (els.adminSaveBtn) {
