@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Love Invitation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Great+Vibes&family=Mulish:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="heart-layer" aria-hidden="true"></div>
+
+    <main class="page">
+      <section id="hero" class="section hero">
+        <p class="eyebrow">A SPECIAL MESSAGE FOR</p>
+        <h1 class="hero-title">My Love</h1>
+        <p class="hero-quote">"Every love story is beautiful, but ours is my favorite"</p>
+        <button id="openLetterBtn" class="cta-button" type="button">Open Your Love Letter</button>
+        <a href="#letter" class="scroll-hint" aria-label="Scroll to letter">v</a>
+      </section>
+
+      <section id="letter" class="section letter-section">
+        <h2 class="section-title">My Love Letter</h2>
+        <p class="section-subtitle">Click the envelope to read your message</p>
+
+        <article
+          id="letterCard"
+          class="letter-card"
+          role="button"
+          tabindex="0"
+          aria-expanded="false"
+          aria-label="Open love letter"
+        >
+          <div class="letter-seal">love</div>
+          <h3>My Dearest Love,</h3>
+          <p class="letter-preview">From the moment I met you, my world changed in the most beautiful way.</p>
+          <div class="letter-full">
+            <p>
+              Every day with you feels like a gift I never knew I needed. Your smile lights up my darkest days,
+              your laughter is the sweetest melody I have ever heard.
+            </p>
+            <p>
+              I love the way you turn ordinary moments into unforgettable memories. I love how your presence makes
+              everything feel right.
+            </p>
+            <p>
+              Thank you for loving me, for choosing me, and for being you. Today and every day, I choose you too.
+            </p>
+            <p>Forever yours.</p>
+          </div>
+          <p class="toggle-hint">tap to open</p>
+        </article>
+      </section>
+
+      <section id="memories" class="section memories-section">
+        <h2 class="section-title">Our Memories</h2>
+        <p class="section-subtitle">A small gallery of moments that stay in my heart.</p>
+
+        <div class="memory-grid">
+          <figure class="memory-card">
+            <img src="https://picsum.photos/seed/love1/900/700" alt="Two people standing during sunset." />
+          </figure>
+          <figure class="memory-card">
+            <img src="https://picsum.photos/seed/love2/900/700" alt="Couple portrait in soft lighting." />
+          </figure>
+          <figure class="memory-card">
+            <img src="https://picsum.photos/seed/love3/900/700" alt="Hands close together in warm tones." />
+          </figure>
+          <figure class="memory-card">
+            <img src="https://picsum.photos/seed/love4/900/700" alt="A cozy date moment." />
+          </figure>
+          <figure class="memory-card">
+            <img src="https://picsum.photos/seed/love5/900/700" alt="Silhouette of a pair in evening sky." />
+          </figure>
+          <figure class="memory-card">
+            <img src="https://picsum.photos/seed/love6/900/700" alt="A candid photo with bright background." />
+          </figure>
+        </div>
+      </section>
+
+      <section id="songs" class="section songs-section">
+        <div class="songs-layout">
+          <article class="player-card">
+            <p class="player-title">Our Playlist</p>
+            <p class="player-subtitle">Songs that tell our story</p>
+            <div class="mini-player">
+              <p class="now-playing-label">Now playing</p>
+              <h3 id="nowPlayingSong" class="now-playing-song">Timeless Love Song</h3>
+              <p id="nowPlayingArtist" class="now-playing-artist">The Midnight Hearts</p>
+              <div class="controls">
+                <button type="button" class="control-btn" aria-label="Previous song"><<</button>
+                <button type="button" id="playPauseBtn" class="control-btn primary" aria-label="Play or pause">
+                  play
+                </button>
+                <button type="button" class="control-btn" aria-label="Next song">>></button>
+              </div>
+            </div>
+          </article>
+
+          <article class="reasons-card">
+            <h3>Why These Songs?</h3>
+            <ul id="songList" class="song-list">
+              <li class="song-item active" data-song="Perfect" data-artist="Ed Sheeran">
+                <span>Perfect</span>
+                <small>Ed Sheeran</small>
+              </li>
+              <li class="song-item" data-song="All of Me" data-artist="John Legend">
+                <span>All of Me</span>
+                <small>John Legend</small>
+              </li>
+              <li class="song-item" data-song="A Thousand Years" data-artist="Christina Perri">
+                <span>A Thousand Years</span>
+                <small>Christina Perri</small>
+              </li>
+              <li class="song-item" data-song="Can't Help Falling in Love" data-artist="Elvis Presley">
+                <span>Can't Help Falling in Love</span>
+                <small>Elvis Presley</small>
+              </li>
+            </ul>
+          </article>
+        </div>
+        <p class="closing-line">I choose you forever.</p>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
