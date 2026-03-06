@@ -41,9 +41,7 @@ const DEFAULT_DATA = {
     ]
   },
   video: {
-    title: "Our Video",
-    subtitle: "A special clip for us.",
-    url: ""
+    items: [{ title: "Our Video", subtitle: "A special clip for us.", url: "" }]
   },
   songs: {
     cardTitle: "Our Playlist",
@@ -97,6 +95,10 @@ const els = {
   adminResetBtn: document.getElementById("adminResetBtn"),
   adminLogoutBtn: document.getElementById("adminLogoutBtn"),
   adminStatus: document.getElementById("adminStatus"),
+  adminVideoRows: document.getElementById("adminVideoRows"),
+  addVideoRowBtn: document.getElementById("addVideoRowBtn"),
+  adminSongRows: document.getElementById("adminSongRows"),
+  addSongRowBtn: document.getElementById("addSongRowBtn"),
   adminPublicLink: document.getElementById("adminPublicLink"),
   adminAdminLink: document.getElementById("adminAdminLink"),
   copyPublicLinkBtn: document.getElementById("copyPublicLinkBtn"),
@@ -123,18 +125,17 @@ const adminInputs = {
   memoriesTitle: document.getElementById("adminMemoriesTitle"),
   memoriesSubtitle: document.getElementById("adminMemoriesSubtitle"),
   memoryUrls: document.getElementById("adminMemoryUrls"),
-  videoTitle: document.getElementById("adminVideoTitle"),
-  videoSubtitle: document.getElementById("adminVideoSubtitle"),
-  videoUrl: document.getElementById("adminVideoUrl"),
   songsCardTitle: document.getElementById("adminSongsCardTitle"),
   songsCardSubtitle: document.getElementById("adminSongsCardSubtitle"),
   reasonsTitle: document.getElementById("adminReasonsTitle"),
-  closingLine: document.getElementById("adminClosingLine"),
-  songsList: document.getElementById("adminSongsList")
+  closingLine: document.getElementById("adminClosingLine")
 };
 
 let siteData = normalizeData(loadData());
 let activeSongIndex = 0;
+let activeVideoIndex = 0;
+let adminSongDraft = [];
+let adminVideoDraft = [];
 const isAdmin = checkAdminAccess();
 
 function clone(data) {
@@ -152,22 +153,43 @@ function normalizeData(raw) {
   const memoryImages = Array.isArray(source.memories?.images)
     ? source.memories.images.map((item) => cleanText(item)).filter(Boolean)
     : [];
-  const songItems = Array.isArray(source.songs?.items)
-    ? source.songs.items
-        .map((item) => ({
-          song: cleanText(item?.song),
-          artist: cleanText(item?.artist),
-          url: cleanText(item?.url)
-        }))
-        .filter((item) => item.song && item.artist)
-    : [];
+  const songItems = Array.isArray(source.songs?.items) ? source.songs.items : [];
+  const videoItems = Array.isArray(source.video?.items) ? source.video.items : [];
   const legacyMusicUrl = cleanText(source.songs?.musicUrl);
+  const legacyVideoItem = {
+    title: cleanText(source.video?.title),
+    subtitle: cleanText(source.video?.subtitle),
+    url: cleanText(source.video?.url)
+  };
   const letterBody = Array.isArray(source.letter?.body)
     ? source.letter.body.map((item) => cleanText(item)).filter(Boolean)
     : [];
-  const safeSongItems = songItems.length ? songItems : clone(DEFAULT_DATA.songs.items);
+
+  const safeSongItems = (songItems.length ? songItems : clone(DEFAULT_DATA.songs.items))
+    .map((item, index) => {
+      const song = cleanText(item?.song, `Song ${index + 1}`);
+      const artist = cleanText(item?.artist, "Unknown Artist");
+      const url = cleanText(item?.url);
+      return { song, artist, url };
+    })
+    .filter((item) => item.song && item.artist);
+
   if (legacyMusicUrl && safeSongItems[0] && !safeSongItems[0].url) {
     safeSongItems[0].url = legacyMusicUrl;
+  }
+
+  const baseVideoItems = videoItems.length ? videoItems : [legacyVideoItem];
+  const safeVideoItems = baseVideoItems
+    .map((item, index) => {
+      const title = cleanText(item?.title, `Video ${index + 1}`);
+      const subtitle = cleanText(item?.subtitle, "A special clip for us.");
+      const url = cleanText(item?.url);
+      return { title, subtitle, url };
+    })
+    .filter((item) => item.title || item.subtitle || item.url);
+
+  if (!safeVideoItems.length) {
+    safeVideoItems.push(clone(DEFAULT_DATA.video.items[0]));
   }
 
   return {
@@ -195,9 +217,7 @@ function normalizeData(raw) {
       images: memoryImages.length ? memoryImages : clone(DEFAULT_DATA.memories.images)
     },
     video: {
-      title: cleanText(source.video?.title, DEFAULT_DATA.video.title),
-      subtitle: cleanText(source.video?.subtitle, DEFAULT_DATA.video.subtitle),
-      url: cleanText(source.video?.url, "")
+      items: safeVideoItems
     },
     songs: {
       cardTitle: cleanText(source.songs?.cardTitle, DEFAULT_DATA.songs.cardTitle),
@@ -415,34 +435,14 @@ function updatePlayButtonMode(mode) {
   els.playPauseBtn.title = "Add song URLs in the songs list";
 }
 
-function applyVideoMedia(video) {
-  const videoUrl = cleanText(video?.url);
-  const videoYoutubeId = extractYoutubeId(videoUrl);
-  if (els.videoSection && els.loveVideo) {
-    if (!videoUrl) {
-      els.videoSection.classList.add("hidden-section");
-      els.loveVideo.style.display = "none";
-      els.loveVideo.pause();
-      els.loveVideo.removeAttribute("src");
-      els.loveVideo.load();
-      resetIframe(els.loveVideoEmbed);
-    } else if (videoYoutubeId && els.loveVideoEmbed) {
-      els.videoSection.classList.remove("hidden-section");
-      els.loveVideo.style.display = "none";
-      els.loveVideo.pause();
-      els.loveVideo.removeAttribute("src");
-      els.loveVideo.load();
-
-      els.loveVideoEmbed.style.display = "block";
-      els.loveVideoEmbed.title = "YouTube video player";
-      els.loveVideoEmbed.src = `${getYoutubeEmbedUrl(videoYoutubeId)}&playsinline=1`;
-    } else {
-      els.videoSection.classList.remove("hidden-section");
-      resetIframe(els.loveVideoEmbed);
-      els.loveVideo.style.display = "block";
-      els.loveVideo.src = videoUrl;
-    }
+function clearVideoPlayers() {
+  if (els.loveVideo) {
+    els.loveVideo.pause();
+    els.loveVideo.style.display = "none";
+    els.loveVideo.removeAttribute("src");
+    els.loveVideo.load();
   }
+  resetIframe(els.loveVideoEmbed);
 }
 
 function clearMusicPlayers() {
@@ -454,6 +454,13 @@ function clearMusicPlayers() {
   resetIframe(els.bgMusicEmbed);
 }
 
+function getVideoByIndex(index) {
+  const videos = siteData?.video?.items || [];
+  if (!videos.length) return null;
+  const safeIndex = (index + videos.length) % videos.length;
+  return videos[safeIndex];
+}
+
 function getSongByIndex(index) {
   const songs = siteData?.songs?.items || [];
   if (!songs.length) return null;
@@ -461,7 +468,17 @@ function getSongByIndex(index) {
   return songs[safeIndex];
 }
 
-function buildYoutubeQueue(startIndex) {
+function buildYoutubeQueueFromVideos(startIndex) {
+  const videos = siteData?.video?.items || [];
+  const queue = [];
+  for (let i = startIndex; i < videos.length; i += 1) {
+    const id = extractYoutubeId(videos[i]?.url);
+    if (id) queue.push(id);
+  }
+  return queue;
+}
+
+function buildYoutubeQueueFromSongs(startIndex) {
   const songs = siteData?.songs?.items || [];
   const queue = [];
   for (let i = startIndex; i < songs.length; i += 1) {
@@ -469,6 +486,90 @@ function buildYoutubeQueue(startIndex) {
     if (id) queue.push(id);
   }
   return queue;
+}
+
+function findNextPlayableSongIndex(startIndex, step = 1) {
+  const songs = siteData?.songs?.items || [];
+  if (!songs.length) return -1;
+
+  let cursor = startIndex;
+  for (let i = 0; i < songs.length; i += 1) {
+    cursor = (cursor + step + songs.length) % songs.length;
+    if (cleanText(songs[cursor]?.url)) return cursor;
+  }
+  return -1;
+}
+
+function findNextPlayableVideoIndex(startIndex, step = 1) {
+  const videos = siteData?.video?.items || [];
+  if (!videos.length) return -1;
+
+  let cursor = startIndex;
+  for (let i = 0; i < videos.length; i += 1) {
+    cursor = (cursor + step + videos.length) % videos.length;
+    if (cleanText(videos[cursor]?.url)) return cursor;
+  }
+  return -1;
+}
+
+function playVideoByIndex(index, options = {}) {
+  const { autoPlay = false } = options;
+  const videos = siteData?.video?.items || [];
+  if (!videos.length) {
+    if (els.videoSection) els.videoSection.classList.add("hidden-section");
+    clearVideoPlayers();
+    return;
+  }
+
+  const safeIndex = (index + videos.length) % videos.length;
+  activeVideoIndex = safeIndex;
+  const video = getVideoByIndex(safeIndex);
+  const videoUrl = cleanText(video?.url);
+  const videoYoutubeId = extractYoutubeId(videoUrl);
+
+  if (els.videoTitle) els.videoTitle.textContent = cleanText(video?.title, "Our Video");
+  if (els.videoSubtitle) els.videoSubtitle.textContent = cleanText(video?.subtitle, "A special clip for us.");
+
+  if (!videoUrl) {
+    if (els.videoSection) els.videoSection.classList.add("hidden-section");
+    clearVideoPlayers();
+    return;
+  }
+
+  if (els.videoSection) els.videoSection.classList.remove("hidden-section");
+
+  if (videoYoutubeId && els.loveVideoEmbed) {
+    clearVideoPlayers();
+    const queue = buildYoutubeQueueFromVideos(activeVideoIndex);
+    const firstId = queue[0] || videoYoutubeId;
+    const restIds = queue.slice(1);
+    const playlistParam = restIds.length ? `&playlist=${restIds.join(",")}` : "";
+    const autoplayParam = autoPlay ? "1" : "0";
+    els.loveVideoEmbed.style.display = "block";
+    els.loveVideoEmbed.title = "YouTube video player";
+    els.loveVideoEmbed.src = `${getYoutubeEmbedUrl(firstId)}&playsinline=1&autoplay=${autoplayParam}${playlistParam}`;
+    return;
+  }
+
+  resetIframe(els.loveVideoEmbed);
+  if (!els.loveVideo) return;
+  els.loveVideo.style.display = "block";
+  els.loveVideo.src = videoUrl;
+  if (autoPlay) {
+    els.loveVideo.play().catch(() => {});
+  }
+}
+
+function playNextVideo(autoPlay = true) {
+  const nextIndex = findNextPlayableVideoIndex(activeVideoIndex, 1);
+  if (nextIndex === -1) return;
+  playVideoByIndex(nextIndex, { autoPlay });
+}
+
+function playPrevVideo(autoPlay = true) {
+  const prevIndex = findNextPlayableVideoIndex(activeVideoIndex, -1);
+  if (prevIndex === -1) return;
+  playVideoByIndex(prevIndex, { autoPlay });
 }
 
 function playSongByIndex(index, options = {}) {
@@ -492,7 +593,7 @@ function playSongByIndex(index, options = {}) {
 
   if (songYoutubeId && els.bgMusicEmbed) {
     clearMusicPlayers();
-    const queue = buildYoutubeQueue(activeSongIndex);
+    const queue = buildYoutubeQueueFromSongs(activeSongIndex);
     const firstId = queue[0] || songYoutubeId;
     const restIds = queue.slice(1);
     const playlistParam = restIds.length ? `&playlist=${restIds.join(",")}` : "";
@@ -514,6 +615,7 @@ function playSongByIndex(index, options = {}) {
   }
 
   resetIframe(els.bgMusicEmbed);
+  if (!els.bgMusic) return;
   els.bgMusic.style.display = "block";
   els.bgMusic.src = songUrl;
   updatePlayButtonMode("audio");
@@ -523,11 +625,15 @@ function playSongByIndex(index, options = {}) {
 }
 
 function playNextSong(autoPlay = true) {
-  playSongByIndex(activeSongIndex + 1, { autoPlay });
+  const nextIndex = findNextPlayableSongIndex(activeSongIndex, 1);
+  if (nextIndex === -1) return;
+  playSongByIndex(nextIndex, { autoPlay });
 }
 
 function playPrevSong(autoPlay = true) {
-  playSongByIndex(activeSongIndex - 1, { autoPlay });
+  const prevIndex = findNextPlayableSongIndex(activeSongIndex, -1);
+  if (prevIndex === -1) return;
+  playSongByIndex(prevIndex, { autoPlay });
 }
 
 function applyData(data) {
@@ -548,15 +654,12 @@ function applyData(data) {
   if (els.memoriesSubtitle) els.memoriesSubtitle.textContent = data.memories.sectionSubtitle;
   renderMemoryGrid(data.memories.images);
 
-  if (els.videoTitle) els.videoTitle.textContent = data.video.title;
-  if (els.videoSubtitle) els.videoSubtitle.textContent = data.video.subtitle;
-
   if (els.songsCardTitle) els.songsCardTitle.textContent = data.songs.cardTitle;
   if (els.songsCardSubtitle) els.songsCardSubtitle.textContent = data.songs.cardSubtitle;
   if (els.reasonsTitle) els.reasonsTitle.textContent = data.songs.reasonsTitle;
   if (els.closingLine) els.closingLine.textContent = data.songs.closingLine;
   renderSongList(data.songs.items);
-  applyVideoMedia(data.video);
+  playVideoByIndex(0, { autoPlay: false });
   playSongByIndex(0, { autoPlay: false });
 }
 
@@ -609,21 +712,166 @@ function parseLines(text) {
     .filter(Boolean);
 }
 
-function parseSongs(text) {
-  const rows = parseLines(text);
-  const parsed = rows
-    .map((line) => {
-      const parts = line.split("|").map((part) => part.trim());
-      if (parts.length < 2) return null;
-      if (!parts[0] || !parts[1]) return null;
+function createEmptySongItem() {
+  return { song: "", artist: "", url: "" };
+}
+
+function createEmptyVideoItem() {
+  return { title: "", subtitle: "", url: "" };
+}
+
+function normalizeAdminSongDraft(items) {
+  const cleaned = (items || [])
+    .map((item, index) => {
+      const songRaw = cleanText(item?.song);
+      const artistRaw = cleanText(item?.artist);
+      const urlRaw = cleanText(item?.url);
+      if (!songRaw && !artistRaw && !urlRaw) return null;
       return {
-        song: parts[0],
-        artist: parts[1],
-        url: cleanText(parts.slice(2).join("|"))
+        song: songRaw || `Song ${index + 1}`,
+        artist: artistRaw || "Unknown Artist",
+        url: urlRaw
       };
     })
     .filter(Boolean);
-  return parsed.length ? parsed : clone(DEFAULT_DATA.songs.items);
+
+  return cleaned.length ? cleaned : clone(DEFAULT_DATA.songs.items);
+}
+
+function normalizeAdminVideoDraft(items) {
+  const cleaned = (items || [])
+    .map((item, index) => {
+      const titleRaw = cleanText(item?.title);
+      const subtitleRaw = cleanText(item?.subtitle);
+      const urlRaw = cleanText(item?.url);
+      if (!titleRaw && !subtitleRaw && !urlRaw) return null;
+      return {
+        title: titleRaw || `Video ${index + 1}`,
+        subtitle: subtitleRaw || "A special clip for us.",
+        url: urlRaw
+      };
+    })
+    .filter(Boolean);
+
+  return cleaned.length ? cleaned : clone(DEFAULT_DATA.video.items);
+}
+
+function renderAdminSongRows() {
+  if (!els.adminSongRows) return;
+  els.adminSongRows.innerHTML = "";
+
+  adminSongDraft.forEach((item, index) => {
+    const song = cleanText(item.song);
+    const artist = cleanText(item.artist);
+    const url = cleanText(item.url);
+    const card = document.createElement("div");
+    card.className = "admin-row-card";
+    card.innerHTML = `
+      <div class="admin-row-head">
+        <span class="admin-row-title">Song ${index + 1}</span>
+        <button type="button" class="admin-row-remove" data-action="remove-song" data-index="${index}">Remove</button>
+      </div>
+      <label class="admin-field"><span>Song title</span><input type="text" data-action="song-input" data-index="${index}" data-field="song" value="${song.replace(/"/g, "&quot;")}" /></label>
+      <label class="admin-field"><span>Artist</span><input type="text" data-action="song-input" data-index="${index}" data-field="artist" value="${artist.replace(/"/g, "&quot;")}" /></label>
+      <label class="admin-field"><span>URL (YouTube, SoundCloud, mp3)</span><input type="url" data-action="song-input" data-index="${index}" data-field="url" value="${url.replace(/"/g, "&quot;")}" /></label>
+    `;
+    els.adminSongRows.appendChild(card);
+  });
+}
+
+function renderAdminVideoRows() {
+  if (!els.adminVideoRows) return;
+  els.adminVideoRows.innerHTML = "";
+
+  adminVideoDraft.forEach((item, index) => {
+    const title = cleanText(item.title);
+    const subtitle = cleanText(item.subtitle);
+    const url = cleanText(item.url);
+    const card = document.createElement("div");
+    card.className = "admin-row-card";
+    card.innerHTML = `
+      <div class="admin-row-head">
+        <span class="admin-row-title">Video ${index + 1}</span>
+        <button type="button" class="admin-row-remove" data-action="remove-video" data-index="${index}">Remove</button>
+      </div>
+      <label class="admin-field"><span>Video title</span><input type="text" data-action="video-input" data-index="${index}" data-field="title" value="${title.replace(/"/g, "&quot;")}" /></label>
+      <label class="admin-field"><span>Video subtitle</span><input type="text" data-action="video-input" data-index="${index}" data-field="subtitle" value="${subtitle.replace(/"/g, "&quot;")}" /></label>
+      <label class="admin-field"><span>Video URL (YouTube or mp4)</span><input type="url" data-action="video-input" data-index="${index}" data-field="url" value="${url.replace(/"/g, "&quot;")}" /></label>
+    `;
+    els.adminVideoRows.appendChild(card);
+  });
+}
+
+function setupAdminListEditors() {
+  if (!isAdmin) return;
+
+  if (els.addSongRowBtn) {
+    els.addSongRowBtn.addEventListener("click", () => {
+      adminSongDraft.push(createEmptySongItem());
+      renderAdminSongRows();
+    });
+  }
+
+  if (els.addVideoRowBtn) {
+    els.addVideoRowBtn.addEventListener("click", () => {
+      adminVideoDraft.push(createEmptyVideoItem());
+      renderAdminVideoRows();
+    });
+  }
+
+  if (els.adminSongRows) {
+    els.adminSongRows.addEventListener("input", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (!target || target.dataset.action !== "song-input") return;
+      const index = Number(target.dataset.index);
+      const field = target.dataset.field;
+      if (!adminSongDraft[index] || !field) return;
+      adminSongDraft[index][field] = target.value;
+    });
+
+    els.adminSongRows.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest("button[data-action='remove-song']");
+      if (!button) return;
+      const index = Number(button.dataset.index);
+      if (Number.isNaN(index)) return;
+      if (adminSongDraft.length <= 1) {
+        adminSongDraft = [createEmptySongItem()];
+      } else {
+        adminSongDraft.splice(index, 1);
+      }
+      renderAdminSongRows();
+    });
+  }
+
+  if (els.adminVideoRows) {
+    els.adminVideoRows.addEventListener("input", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (!target || target.dataset.action !== "video-input") return;
+      const index = Number(target.dataset.index);
+      const field = target.dataset.field;
+      if (!adminVideoDraft[index] || !field) return;
+      adminVideoDraft[index][field] = target.value;
+    });
+
+    els.adminVideoRows.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest("button[data-action='remove-video']");
+      if (!button) return;
+      const index = Number(button.dataset.index);
+      if (Number.isNaN(index)) return;
+      if (adminVideoDraft.length <= 1) {
+        adminVideoDraft = [createEmptyVideoItem()];
+      } else {
+        adminVideoDraft.splice(index, 1);
+      }
+      renderAdminVideoRows();
+    });
+  }
 }
 
 function setAdminStatus(text, isError = false) {
@@ -700,19 +948,21 @@ function fillAdminForm(data) {
   adminInputs.memoriesTitle.value = data.memories.sectionTitle;
   adminInputs.memoriesSubtitle.value = data.memories.sectionSubtitle;
   adminInputs.memoryUrls.value = data.memories.images.join("\n");
-  adminInputs.videoTitle.value = data.video.title;
-  adminInputs.videoSubtitle.value = data.video.subtitle;
-  adminInputs.videoUrl.value = data.video.url;
   adminInputs.songsCardTitle.value = data.songs.cardTitle;
   adminInputs.songsCardSubtitle.value = data.songs.cardSubtitle;
   adminInputs.reasonsTitle.value = data.songs.reasonsTitle;
   adminInputs.closingLine.value = data.songs.closingLine;
-  adminInputs.songsList.value = data.songs.items
-    .map((item) => `${item.song} | ${item.artist}${item.url ? ` | ${item.url}` : ""}`)
-    .join("\n");
+  adminVideoDraft = clone(data.video.items || []);
+  adminSongDraft = clone(data.songs.items || []);
+  if (!adminVideoDraft.length) adminVideoDraft = [createEmptyVideoItem()];
+  if (!adminSongDraft.length) adminSongDraft = [createEmptySongItem()];
+  renderAdminVideoRows();
+  renderAdminSongRows();
 }
 
 function collectAdminFormData() {
+  const normalizedSongs = normalizeAdminSongDraft(adminSongDraft);
+  const normalizedVideos = normalizeAdminVideoDraft(adminVideoDraft);
   return normalizeData({
     theme: {
       bg: adminInputs.themeBg.value,
@@ -738,16 +988,14 @@ function collectAdminFormData() {
       images: parseLines(adminInputs.memoryUrls.value)
     },
     video: {
-      title: adminInputs.videoTitle.value,
-      subtitle: adminInputs.videoSubtitle.value,
-      url: adminInputs.videoUrl.value
+      items: normalizedVideos
     },
     songs: {
       cardTitle: adminInputs.songsCardTitle.value,
       cardSubtitle: adminInputs.songsCardSubtitle.value,
       reasonsTitle: adminInputs.reasonsTitle.value,
       closingLine: adminInputs.closingLine.value,
-      items: parseSongs(adminInputs.songsList.value)
+      items: normalizedSongs
     }
   });
 }
@@ -785,6 +1033,7 @@ function setupAdminPanel() {
   els.adminPanel.hidden = false;
   if (els.adminBadge) els.adminBadge.hidden = false;
   fillAdminForm(siteData);
+  setupAdminListEditors();
   setupShareTools();
   setAdminStatus("Admin mode is active.");
 
@@ -880,6 +1129,12 @@ function setupEvents() {
     });
     els.bgMusic.addEventListener("ended", () => {
       playNextSong(true);
+    });
+  }
+
+  if (els.loveVideo) {
+    els.loveVideo.addEventListener("ended", () => {
+      playNextVideo(true);
     });
   }
 }

@@ -501,6 +501,45 @@ body {
   background: #fff8fc;
 }
 
+.admin-rows {
+  display: grid;
+  gap: 0.55rem;
+  margin-bottom: 0.55rem;
+}
+
+.admin-row-card {
+  border: 1px solid #edd2de;
+  border-radius: 12px;
+  background: #fff9fc;
+  padding: 0.5rem;
+}
+
+.admin-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.36rem;
+}
+
+.admin-row-title {
+  color: #603a4f;
+  font-family: "Mulish", sans-serif;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.admin-row-remove {
+  border: 1px solid #f0bed1;
+  border-radius: 999px;
+  background: #fff0f7;
+  color: #8a3558;
+  font-family: "Mulish", sans-serif;
+  font-size: 0.68rem;
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+}
+
 .admin-inline-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

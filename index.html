@@ -166,9 +166,8 @@
 
       <div class="admin-group">
         <h3>Video</h3>
-        <label class="admin-field"><span>Video title</span><input id="adminVideoTitle" type="text" /></label>
-        <label class="admin-field"><span>Video subtitle</span><input id="adminVideoSubtitle" type="text" /></label>
-        <label class="admin-field"><span>Video URL (YouTube or mp4 link)</span><input id="adminVideoUrl" type="url" /></label>
+        <div id="adminVideoRows" class="admin-rows"></div>
+        <button id="addVideoRowBtn" class="admin-btn" type="button">+ Add Video</button>
       </div>
 
       <div class="admin-group">
@@ -177,10 +176,8 @@
         <label class="admin-field"><span>Card subtitle</span><input id="adminSongsCardSubtitle" type="text" /></label>
         <label class="admin-field"><span>Reasons title</span><input id="adminReasonsTitle" type="text" /></label>
         <label class="admin-field"><span>Closing line</span><input id="adminClosingLine" type="text" /></label>
-        <label class="admin-field">
-          <span>Songs (format: Song | Artist | URL, one line each)</span>
-          <textarea id="adminSongsList" rows="5"></textarea>
-        </label>
+        <div id="adminSongRows" class="admin-rows"></div>
+        <button id="addSongRowBtn" class="admin-btn" type="button">+ Add Song</button>
       </div>
 
       <div class="admin-group">
