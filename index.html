@@ -69,6 +69,12 @@
         <p id="videoSubtitle" class="section-subtitle">A special clip for us.</p>
         <div class="video-wrap">
           <video id="loveVideo" controls playsinline preload="metadata"></video>
+          <iframe
+            id="loveVideoEmbed"
+            title="YouTube video player"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen
+          ></iframe>
         </div>
       </section>
 
@@ -89,6 +95,13 @@
                 <button id="nextSongBtn" type="button" class="control-btn" aria-label="Next song">>></button>
               </div>
               <audio id="bgMusic" class="bg-music" controls preload="none"></audio>
+              <iframe
+                id="bgMusicEmbed"
+                class="bg-music-embed"
+                title="YouTube music player"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowfullscreen
+              ></iframe>
             </div>
           </article>
 
@@ -155,7 +168,7 @@
         <h3>Video</h3>
         <label class="admin-field"><span>Video title</span><input id="adminVideoTitle" type="text" /></label>
         <label class="admin-field"><span>Video subtitle</span><input id="adminVideoSubtitle" type="text" /></label>
-        <label class="admin-field"><span>Video URL (mp4 link)</span><input id="adminVideoUrl" type="url" /></label>
+        <label class="admin-field"><span>Video URL (YouTube or mp4 link)</span><input id="adminVideoUrl" type="url" /></label>
       </div>
 
       <div class="admin-group">
@@ -168,7 +181,7 @@
           <span>Songs (format: Song | Artist, one line each)</span>
           <textarea id="adminSongsList" rows="5"></textarea>
         </label>
-        <label class="admin-field"><span>Music URL (mp3 link)</span><input id="adminMusicUrl" type="url" /></label>
+        <label class="admin-field"><span>Music URL (YouTube or mp3 link)</span><input id="adminMusicUrl" type="url" /></label>
       </div>
 
       <div class="admin-actions">

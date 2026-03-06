@@ -78,6 +78,7 @@ const els = {
   videoTitle: document.getElementById("videoTitle"),
   videoSubtitle: document.getElementById("videoSubtitle"),
   loveVideo: document.getElementById("loveVideo"),
+  loveVideoEmbed: document.getElementById("loveVideoEmbed"),
   songsCardTitle: document.getElementById("songsCardTitle"),
   songsCardSubtitle: document.getElementById("songsCardSubtitle"),
   reasonsTitle: document.getElementById("reasonsTitle"),
@@ -89,6 +90,7 @@ const els = {
   prevSongBtn: document.getElementById("prevSongBtn"),
   nextSongBtn: document.getElementById("nextSongBtn"),
   bgMusic: document.getElementById("bgMusic"),
+  bgMusicEmbed: document.getElementById("bgMusicEmbed"),
   adminPanel: document.getElementById("adminPanel"),
   adminBadge: document.getElementById("adminBadge"),
   adminSaveBtn: document.getElementById("adminSaveBtn"),
@@ -295,32 +297,132 @@ function setTheme(theme) {
   root.style.setProperty("--accent-deep", theme.accentDeep);
 }
 
+function normalizeYoutubeId(value) {
+  const cleaned = cleanText(value).split(/[?&#]/)[0];
+  return /^[A-Za-z0-9_-]{11}$/.test(cleaned) ? cleaned : "";
+}
+
+function extractYoutubeId(url) {
+  const raw = cleanText(url);
+  if (!raw) return "";
+
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.hostname.replace(/^www\./, "");
+
+    if (host === "youtu.be") {
+      return normalizeYoutubeId(parsed.pathname.split("/").filter(Boolean)[0] || "");
+    }
+
+    if (host === "youtube.com" || host === "m.youtube.com" || host === "music.youtube.com" || host === "youtube-nocookie.com") {
+      const vParam = parsed.searchParams.get("v");
+      if (vParam) return normalizeYoutubeId(vParam);
+
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      const markerIndex = parts.findIndex((part) => part === "embed" || part === "shorts" || part === "live");
+      if (markerIndex !== -1 && parts[markerIndex + 1]) {
+        return normalizeYoutubeId(parts[markerIndex + 1]);
+      }
+    }
+  } catch (error) {
+    return "";
+  }
+
+  return "";
+}
+
+function getYoutubeEmbedUrl(videoId) {
+  return `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`;
+}
+
+function resetIframe(iframe) {
+  if (!iframe) return;
+  iframe.style.display = "none";
+  iframe.removeAttribute("src");
+}
+
+function updatePlayButtonMode(mode) {
+  if (!els.playPauseBtn) return;
+
+  els.playPauseBtn.dataset.state = "paused";
+  els.playPauseBtn.textContent = "play";
+
+  if (mode === "audio") {
+    els.playPauseBtn.disabled = false;
+    els.playPauseBtn.title = "Play or pause";
+    return;
+  }
+
+  if (mode === "youtube") {
+    els.playPauseBtn.disabled = true;
+    els.playPauseBtn.textContent = "yt";
+    els.playPauseBtn.title = "Use YouTube player controls";
+    return;
+  }
+
+  els.playPauseBtn.disabled = true;
+  els.playPauseBtn.title = "Add a music URL in admin mode";
+}
+
 function applyMedia(video, songs) {
+  const videoUrl = cleanText(video?.url);
+  const musicUrl = cleanText(songs?.musicUrl);
+  const videoYoutubeId = extractYoutubeId(videoUrl);
+  const musicYoutubeId = extractYoutubeId(musicUrl);
+
   if (els.videoSection && els.loveVideo) {
-    if (video.url) {
-      els.videoSection.classList.remove("hidden-section");
-      els.loveVideo.src = video.url;
-    } else {
+    if (!videoUrl) {
       els.videoSection.classList.add("hidden-section");
+      els.loveVideo.style.display = "none";
+      els.loveVideo.pause();
       els.loveVideo.removeAttribute("src");
       els.loveVideo.load();
+      resetIframe(els.loveVideoEmbed);
+    } else if (videoYoutubeId && els.loveVideoEmbed) {
+      els.videoSection.classList.remove("hidden-section");
+      els.loveVideo.style.display = "none";
+      els.loveVideo.pause();
+      els.loveVideo.removeAttribute("src");
+      els.loveVideo.load();
+
+      els.loveVideoEmbed.style.display = "block";
+      els.loveVideoEmbed.src = `${getYoutubeEmbedUrl(videoYoutubeId)}&playsinline=1`;
+    } else {
+      els.videoSection.classList.remove("hidden-section");
+      resetIframe(els.loveVideoEmbed);
+      els.loveVideo.style.display = "block";
+      els.loveVideo.src = videoUrl;
     }
   }
 
-  if (els.bgMusic) {
-    if (songs.musicUrl) {
-      els.bgMusic.style.display = "block";
-      els.bgMusic.src = songs.musicUrl;
-    } else {
-      els.bgMusic.style.display = "none";
-      els.bgMusic.removeAttribute("src");
-      els.bgMusic.load();
-    }
-    if (els.playPauseBtn) {
-      els.playPauseBtn.dataset.state = "paused";
-      els.playPauseBtn.textContent = "play";
-    }
+  if (!els.bgMusic) return;
+
+  if (!musicUrl) {
+    els.bgMusic.style.display = "none";
+    els.bgMusic.pause();
+    els.bgMusic.removeAttribute("src");
+    els.bgMusic.load();
+    resetIframe(els.bgMusicEmbed);
+    updatePlayButtonMode("none");
+    return;
   }
+
+  if (musicYoutubeId && els.bgMusicEmbed) {
+    els.bgMusic.style.display = "none";
+    els.bgMusic.pause();
+    els.bgMusic.removeAttribute("src");
+    els.bgMusic.load();
+
+    els.bgMusicEmbed.style.display = "block";
+    els.bgMusicEmbed.src = `${getYoutubeEmbedUrl(musicYoutubeId)}&playsinline=1`;
+    updatePlayButtonMode("youtube");
+    return;
+  }
+
+  resetIframe(els.bgMusicEmbed);
+  els.bgMusic.style.display = "block";
+  els.bgMusic.src = musicUrl;
+  updatePlayButtonMode("audio");
 }
 
 function applyData(data) {
@@ -374,7 +476,8 @@ function setActiveSongByIndex(index) {
 
 function playOrPause() {
   if (!els.playPauseBtn) return;
-  const hasAudio = Boolean(els.bgMusic?.src);
+  if (els.playPauseBtn.disabled) return;
+  const hasAudio = Boolean(els.bgMusic?.getAttribute("src"));
 
   if (!hasAudio) {
     const playing = els.playPauseBtn.dataset.state !== "playing";
