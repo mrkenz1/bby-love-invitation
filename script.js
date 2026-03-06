@@ -51,12 +51,11 @@ const DEFAULT_DATA = {
     reasonsTitle: "Why These Songs?",
     closingLine: "I choose you forever.",
     items: [
-      { song: "Perfect", artist: "Ed Sheeran" },
-      { song: "All of Me", artist: "John Legend" },
-      { song: "A Thousand Years", artist: "Christina Perri" },
-      { song: "Can't Help Falling in Love", artist: "Elvis Presley" }
-    ],
-    musicUrl: ""
+      { song: "Perfect", artist: "Ed Sheeran", url: "" },
+      { song: "All of Me", artist: "John Legend", url: "" },
+      { song: "A Thousand Years", artist: "Christina Perri", url: "" },
+      { song: "Can't Help Falling in Love", artist: "Elvis Presley", url: "" }
+    ]
   }
 };
 
@@ -131,8 +130,7 @@ const adminInputs = {
   songsCardSubtitle: document.getElementById("adminSongsCardSubtitle"),
   reasonsTitle: document.getElementById("adminReasonsTitle"),
   closingLine: document.getElementById("adminClosingLine"),
-  songsList: document.getElementById("adminSongsList"),
-  musicUrl: document.getElementById("adminMusicUrl")
+  songsList: document.getElementById("adminSongsList")
 };
 
 let siteData = normalizeData(loadData());
@@ -158,13 +156,19 @@ function normalizeData(raw) {
     ? source.songs.items
         .map((item) => ({
           song: cleanText(item?.song),
-          artist: cleanText(item?.artist)
+          artist: cleanText(item?.artist),
+          url: cleanText(item?.url)
         }))
         .filter((item) => item.song && item.artist)
     : [];
+  const legacyMusicUrl = cleanText(source.songs?.musicUrl);
   const letterBody = Array.isArray(source.letter?.body)
     ? source.letter.body.map((item) => cleanText(item)).filter(Boolean)
     : [];
+  const safeSongItems = songItems.length ? songItems : clone(DEFAULT_DATA.songs.items);
+  if (legacyMusicUrl && safeSongItems[0] && !safeSongItems[0].url) {
+    safeSongItems[0].url = legacyMusicUrl;
+  }
 
   return {
     theme: {
@@ -200,8 +204,7 @@ function normalizeData(raw) {
       cardSubtitle: cleanText(source.songs?.cardSubtitle, DEFAULT_DATA.songs.cardSubtitle),
       reasonsTitle: cleanText(source.songs?.reasonsTitle, DEFAULT_DATA.songs.reasonsTitle),
       closingLine: cleanText(source.songs?.closingLine, DEFAULT_DATA.songs.closingLine),
-      items: songItems.length ? songItems : clone(DEFAULT_DATA.songs.items),
-      musicUrl: cleanText(source.songs?.musicUrl, "")
+      items: safeSongItems
     }
   };
 }
@@ -278,6 +281,7 @@ function renderSongList(items) {
     li.className = `song-item${index === 0 ? " active" : ""}`;
     li.dataset.song = item.song;
     li.dataset.artist = item.artist;
+    li.dataset.url = cleanText(item.url);
 
     const title = document.createElement("span");
     title.textContent = item.song;
@@ -290,7 +294,7 @@ function renderSongList(items) {
   });
 
   activeSongIndex = 0;
-  updateNowPlaying(items[0]);
+  updateNowPlaying(items[0] || DEFAULT_DATA.songs.items[0]);
 }
 
 function updateNowPlaying(item) {
@@ -357,9 +361,9 @@ function isSoundCloudUrl(url) {
   }
 }
 
-function getSoundCloudEmbedUrl(trackUrl) {
+function getSoundCloudEmbedUrl(trackUrl, autoPlay = false) {
   const encoded = encodeURIComponent(trackUrl);
-  return `https://w.soundcloud.com/player/?url=${encoded}&color=%23ea2d6f&auto_play=false&hide_related=false&show_comments=false&show_user=true&show_reposts=false&show_teaser=true&visual=false`;
+  return `https://w.soundcloud.com/player/?url=${encoded}&color=%23ea2d6f&auto_play=${autoPlay ? "true" : "false"}&hide_related=false&show_comments=false&show_user=true&show_reposts=false&show_teaser=true&visual=false`;
 }
 
 function getShareLinks() {
@@ -408,16 +412,12 @@ function updatePlayButtonMode(mode) {
   }
 
   els.playPauseBtn.disabled = true;
-  els.playPauseBtn.title = "Add a music URL in admin mode";
+  els.playPauseBtn.title = "Add song URLs in the songs list";
 }
 
-function applyMedia(video, songs) {
+function applyVideoMedia(video) {
   const videoUrl = cleanText(video?.url);
-  const musicUrl = cleanText(songs?.musicUrl);
   const videoYoutubeId = extractYoutubeId(videoUrl);
-  const musicYoutubeId = extractYoutubeId(musicUrl);
-  const musicIsSoundCloud = isSoundCloudUrl(musicUrl);
-
   if (els.videoSection && els.loveVideo) {
     if (!videoUrl) {
       els.videoSection.classList.add("hidden-section");
@@ -443,49 +443,91 @@ function applyMedia(video, songs) {
       els.loveVideo.src = videoUrl;
     }
   }
+}
 
+function clearMusicPlayers() {
   if (!els.bgMusic) return;
+  els.bgMusic.pause();
+  els.bgMusic.style.display = "none";
+  els.bgMusic.removeAttribute("src");
+  els.bgMusic.load();
+  resetIframe(els.bgMusicEmbed);
+}
 
-  if (!musicUrl) {
-    els.bgMusic.style.display = "none";
-    els.bgMusic.pause();
-    els.bgMusic.removeAttribute("src");
-    els.bgMusic.load();
-    resetIframe(els.bgMusicEmbed);
+function getSongByIndex(index) {
+  const songs = siteData?.songs?.items || [];
+  if (!songs.length) return null;
+  const safeIndex = (index + songs.length) % songs.length;
+  return songs[safeIndex];
+}
+
+function buildYoutubeQueue(startIndex) {
+  const songs = siteData?.songs?.items || [];
+  const queue = [];
+  for (let i = startIndex; i < songs.length; i += 1) {
+    const id = extractYoutubeId(songs[i]?.url);
+    if (id) queue.push(id);
+  }
+  return queue;
+}
+
+function playSongByIndex(index, options = {}) {
+  const { autoPlay = false } = options;
+  const song = setActiveSongByIndex(index);
+  if (!song) {
+    clearMusicPlayers();
     updatePlayButtonMode("none");
     return;
   }
 
-  if (musicYoutubeId && els.bgMusicEmbed) {
-    els.bgMusic.style.display = "none";
-    els.bgMusic.pause();
-    els.bgMusic.removeAttribute("src");
-    els.bgMusic.load();
+  const songUrl = cleanText(song.url);
+  const songYoutubeId = extractYoutubeId(songUrl);
+  const songIsSoundCloud = isSoundCloudUrl(songUrl);
 
+  if (!songUrl) {
+    clearMusicPlayers();
+    updatePlayButtonMode("none");
+    return;
+  }
+
+  if (songYoutubeId && els.bgMusicEmbed) {
+    clearMusicPlayers();
+    const queue = buildYoutubeQueue(activeSongIndex);
+    const firstId = queue[0] || songYoutubeId;
+    const restIds = queue.slice(1);
+    const playlistParam = restIds.length ? `&playlist=${restIds.join(",")}` : "";
+    const autoplayParam = autoPlay ? "1" : "0";
     els.bgMusicEmbed.style.display = "block";
     els.bgMusicEmbed.title = "YouTube music player";
-    els.bgMusicEmbed.src = `${getYoutubeEmbedUrl(musicYoutubeId)}&playsinline=1`;
+    els.bgMusicEmbed.src = `${getYoutubeEmbedUrl(firstId)}&playsinline=1&autoplay=${autoplayParam}${playlistParam}`;
     updatePlayButtonMode("youtube");
     return;
   }
 
-  if (musicIsSoundCloud && els.bgMusicEmbed) {
-    els.bgMusic.style.display = "none";
-    els.bgMusic.pause();
-    els.bgMusic.removeAttribute("src");
-    els.bgMusic.load();
-
+  if (songIsSoundCloud && els.bgMusicEmbed) {
+    clearMusicPlayers();
     els.bgMusicEmbed.style.display = "block";
     els.bgMusicEmbed.title = "SoundCloud music player";
-    els.bgMusicEmbed.src = getSoundCloudEmbedUrl(musicUrl);
+    els.bgMusicEmbed.src = getSoundCloudEmbedUrl(songUrl, autoPlay);
     updatePlayButtonMode("soundcloud");
     return;
   }
 
   resetIframe(els.bgMusicEmbed);
   els.bgMusic.style.display = "block";
-  els.bgMusic.src = musicUrl;
+  els.bgMusic.src = songUrl;
   updatePlayButtonMode("audio");
+  if (autoPlay) {
+    els.bgMusic.play().catch(() => {});
+  }
+}
+
+function playNextSong(autoPlay = true) {
+  playSongByIndex(activeSongIndex + 1, { autoPlay });
+}
+
+function playPrevSong(autoPlay = true) {
+  playSongByIndex(activeSongIndex - 1, { autoPlay });
 }
 
 function applyData(data) {
@@ -514,8 +556,8 @@ function applyData(data) {
   if (els.reasonsTitle) els.reasonsTitle.textContent = data.songs.reasonsTitle;
   if (els.closingLine) els.closingLine.textContent = data.songs.closingLine;
   renderSongList(data.songs.items);
-
-  applyMedia(data.video, data.songs);
+  applyVideoMedia(data.video);
+  playSongByIndex(0, { autoPlay: false });
 }
 
 function getSongItems() {
@@ -524,17 +566,20 @@ function getSongItems() {
 
 function setActiveSongByIndex(index) {
   const items = getSongItems();
-  if (!items.length) return;
+  if (!items.length) return null;
   const safeIndex = (index + items.length) % items.length;
 
   items.forEach((item) => item.classList.remove("active"));
   const active = items[safeIndex];
   active.classList.add("active");
   activeSongIndex = safeIndex;
-  updateNowPlaying({
+  const song = getSongByIndex(safeIndex) || {
     song: active.dataset.song || "Unknown song",
-    artist: active.dataset.artist || "Unknown artist"
-  });
+    artist: active.dataset.artist || "Unknown artist",
+    url: active.dataset.url || ""
+  };
+  updateNowPlaying(song);
+  return song;
 }
 
 function playOrPause() {
@@ -543,9 +588,6 @@ function playOrPause() {
   const hasAudio = Boolean(els.bgMusic?.getAttribute("src"));
 
   if (!hasAudio) {
-    const playing = els.playPauseBtn.dataset.state !== "playing";
-    els.playPauseBtn.dataset.state = playing ? "playing" : "paused";
-    els.playPauseBtn.textContent = playing ? "pause" : "play";
     return;
   }
 
@@ -574,7 +616,11 @@ function parseSongs(text) {
       const parts = line.split("|").map((part) => part.trim());
       if (parts.length < 2) return null;
       if (!parts[0] || !parts[1]) return null;
-      return { song: parts[0], artist: parts[1] };
+      return {
+        song: parts[0],
+        artist: parts[1],
+        url: cleanText(parts.slice(2).join("|"))
+      };
     })
     .filter(Boolean);
   return parsed.length ? parsed : clone(DEFAULT_DATA.songs.items);
@@ -661,8 +707,9 @@ function fillAdminForm(data) {
   adminInputs.songsCardSubtitle.value = data.songs.cardSubtitle;
   adminInputs.reasonsTitle.value = data.songs.reasonsTitle;
   adminInputs.closingLine.value = data.songs.closingLine;
-  adminInputs.songsList.value = data.songs.items.map((item) => `${item.song} | ${item.artist}`).join("\n");
-  adminInputs.musicUrl.value = data.songs.musicUrl;
+  adminInputs.songsList.value = data.songs.items
+    .map((item) => `${item.song} | ${item.artist}${item.url ? ` | ${item.url}` : ""}`)
+    .join("\n");
 }
 
 function collectAdminFormData() {
@@ -700,8 +747,7 @@ function collectAdminFormData() {
       cardSubtitle: adminInputs.songsCardSubtitle.value,
       reasonsTitle: adminInputs.reasonsTitle.value,
       closingLine: adminInputs.closingLine.value,
-      items: parseSongs(adminInputs.songsList.value),
-      musicUrl: adminInputs.musicUrl.value
+      items: parseSongs(adminInputs.songsList.value)
     }
   });
 }
@@ -801,19 +847,19 @@ function setupEvents() {
       if (!item) return;
       const list = getSongItems();
       const index = list.indexOf(item);
-      if (index >= 0) setActiveSongByIndex(index);
+      if (index >= 0) playSongByIndex(index, { autoPlay: true });
     });
   }
 
   if (els.prevSongBtn) {
     els.prevSongBtn.addEventListener("click", () => {
-      setActiveSongByIndex(activeSongIndex - 1);
+      playPrevSong(true);
     });
   }
 
   if (els.nextSongBtn) {
     els.nextSongBtn.addEventListener("click", () => {
-      setActiveSongByIndex(activeSongIndex + 1);
+      playNextSong(true);
     });
   }
 
@@ -831,6 +877,9 @@ function setupEvents() {
       if (!els.playPauseBtn) return;
       els.playPauseBtn.dataset.state = "playing";
       els.playPauseBtn.textContent = "pause";
+    });
+    els.bgMusic.addEventListener("ended", () => {
+      playNextSong(true);
     });
   }
 }
