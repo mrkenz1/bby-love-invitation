@@ -84,33 +84,12 @@
             <p id="songsCardTitle" class="player-title">Our Playlist</p>
             <p id="songsCardSubtitle" class="player-subtitle">Songs that tell our story</p>
             <div id="miniPlayer" class="mini-player">
-              <div class="mini-player-head">
-                <div class="now-cover-frame" aria-hidden="true">
-                  <img id="nowPlayingCover" class="now-cover" alt="Now playing cover" hidden />
-                  <div id="nowPlayingCoverFallback" class="now-cover-fallback">♪</div>
-                </div>
-                <div class="mini-player-meta">
-                  <p class="now-playing-label">Now playing</p>
-                  <h3 id="nowPlayingSong" class="now-playing-song">Timeless Love Song</h3>
-                  <p id="nowPlayingArtist" class="now-playing-artist">The Midnight Hearts</p>
-                </div>
-              </div>
-              <div id="songWave" class="song-wave" aria-hidden="true"></div>
-              <div class="song-time-row" aria-hidden="true">
-                <span id="songTimeCurrent" class="song-time">0:00</span>
-                <div class="song-time-track">
-                  <span id="songTimeProgress" class="song-time-progress"></span>
-                </div>
-                <span id="songTimeTotal" class="song-time">--:--</span>
-              </div>
-              <div class="controls">
-                <button id="prevSongBtn" type="button" class="control-btn" aria-label="Previous song">&#9198;</button>
-                <button type="button" id="playPauseBtn" class="control-btn primary" aria-label="Play or pause">
-                  &#9654;
-                </button>
-                <button id="nextSongBtn" type="button" class="control-btn" aria-label="Next song">&#9197;</button>
+              <div class="mini-player-top" aria-hidden="true">
+                <span class="mini-top-icon">&#709;</span>
+                <span class="mini-top-icon">&#9776;</span>
               </div>
               <div class="player-screen">
+                <div id="playerScreenPlaceholder" class="player-screen-placeholder">Your video appears here.</div>
                 <audio id="bgMusic" class="bg-music" preload="none"></audio>
                 <iframe
                   id="bgMusicEmbed"
@@ -119,6 +98,24 @@
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   allowfullscreen
                 ></iframe>
+              </div>
+              <div class="mini-player-meta">
+                <h3 id="nowPlayingSong" class="now-playing-song">Timeless Love Song</h3>
+                <p id="nowPlayingArtist" class="now-playing-artist">The Midnight Hearts</p>
+              </div>
+              <div class="song-time-row" aria-hidden="true">
+                <span id="songTimeCurrent" class="song-time">0:00</span>
+                <div class="song-time-track">
+                  <span id="songTimeProgress" class="song-time-progress"></span>
+                </div>
+                <span id="songTimeTotal" class="song-time">--:--</span>
+              </div>
+              <div class="controls">
+                <button id="shuffleBtn" type="button" class="control-btn" aria-label="Shuffle songs">&#128256;</button>
+                <button id="prevSongBtn" type="button" class="control-btn" aria-label="Previous song">&#9198;</button>
+                <button type="button" id="playPauseBtn" class="control-btn primary" aria-label="Play or pause">&#9654;</button>
+                <button id="nextSongBtn" type="button" class="control-btn" aria-label="Next song">&#9197;</button>
+                <button id="repeatBtn" type="button" class="control-btn" aria-label="Repeat songs">&#128257;</button>
               </div>
             </div>
           </article>
@@ -233,3 +230,4 @@
     <script src="script.js"></script>
   </body>
 </html>
+

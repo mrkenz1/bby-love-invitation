@@ -100,13 +100,16 @@ const els = {
   nowPlayingArtist: document.getElementById("nowPlayingArtist"),
   nowPlayingCover: document.getElementById("nowPlayingCover"),
   nowPlayingCoverFallback: document.getElementById("nowPlayingCoverFallback"),
+  playerScreenPlaceholder: document.getElementById("playerScreenPlaceholder"),
   songWave: document.getElementById("songWave"),
   songTimeCurrent: document.getElementById("songTimeCurrent"),
   songTimeTotal: document.getElementById("songTimeTotal"),
   songTimeProgress: document.getElementById("songTimeProgress"),
+  shuffleBtn: document.getElementById("shuffleBtn"),
   playPauseBtn: document.getElementById("playPauseBtn"),
   prevSongBtn: document.getElementById("prevSongBtn"),
   nextSongBtn: document.getElementById("nextSongBtn"),
+  repeatBtn: document.getElementById("repeatBtn"),
   bgMusic: document.getElementById("bgMusic"),
   bgMusicEmbed: document.getElementById("bgMusicEmbed"),
   adminPanel: document.getElementById("adminPanel"),
@@ -165,6 +168,7 @@ let songWaveAudioContext = null;
 let songWaveAnalyser = null;
 let songWaveAudioData = null;
 let songWaveAudioSource = null;
+let repeatCurrentSong = false;
 const isAdmin = checkAdminAccess();
 
 siteData = loadInitialSiteData();
@@ -432,6 +436,12 @@ function buildSongWaveBars() {
   songWaveBars = Array.from(els.songWave.querySelectorAll(".song-wave-bar"));
 }
 
+function updatePlayerScreenState() {
+  if (!els.playerScreenPlaceholder) return;
+  const hasVisual = Boolean(cleanText(els.bgMusicEmbed?.getAttribute("src")));
+  els.playerScreenPlaceholder.hidden = hasVisual;
+}
+
 function ensureSongWaveBars() {
   if (songWaveBars.length) return songWaveBars;
   if (!els.songWave) return [];
@@ -478,7 +488,7 @@ function resumeSongWaveAnalyser() {
 function renderSongWaveFrame(timestamp) {
   const bars = ensureSongWaveBars();
   if (!bars.length) {
-    songWaveFrameId = requestAnimationFrame(renderSongWaveFrame);
+    songWaveFrameId = 0;
     return;
   }
 
@@ -527,6 +537,7 @@ function renderSongWaveFrame(timestamp) {
 }
 
 function startSongWaveAnimation() {
+  if (!els.songWave) return;
   if (songWaveFrameId) return;
   songWaveFrameId = requestAnimationFrame(renderSongWaveFrame);
 }
@@ -561,7 +572,7 @@ function updateSongClock(currentSeconds = 0, totalSeconds = NaN) {
 function setMiniPlayerPlaying(isPlaying) {
   if (!els.miniPlayer) return;
   els.miniPlayer.classList.toggle("playing", Boolean(isPlaying));
-  if (isPlaying) {
+  if (isPlaying && els.songWave) {
     ensureSongWaveAnalyser();
     resumeSongWaveAnalyser();
   }
@@ -913,14 +924,12 @@ function updatePlayButtonMode(mode) {
 
   if (mode === "youtube") {
     els.playPauseBtn.disabled = true;
-    els.playPauseBtn.textContent = "yt";
     els.playPauseBtn.title = "Use YouTube player controls";
     return;
   }
 
   if (mode === "soundcloud") {
     els.playPauseBtn.disabled = true;
-    els.playPauseBtn.textContent = "sc";
     els.playPauseBtn.title = "Use SoundCloud player controls";
     return;
   }
@@ -948,6 +957,7 @@ function clearMusicPlayers() {
   resetIframe(els.bgMusicEmbed);
   setMiniPlayerPlaying(false);
   updateSongClock(0, NaN);
+  updatePlayerScreenState();
 }
 
 function getVideoByIndex(index) {
@@ -1086,6 +1096,7 @@ function playSongByIndex(index, options = {}) {
     updatePlayButtonMode("none");
     setMiniPlayerPlaying(false);
     updateSongClock(0, NaN);
+    updatePlayerScreenState();
     return;
   }
 
@@ -1102,6 +1113,7 @@ function playSongByIndex(index, options = {}) {
     updatePlayButtonMode("youtube");
     setMiniPlayerPlaying(autoPlay);
     updateSongClock(0, NaN);
+    updatePlayerScreenState();
     return;
   }
 
@@ -1113,6 +1125,7 @@ function playSongByIndex(index, options = {}) {
     updatePlayButtonMode("soundcloud");
     setMiniPlayerPlaying(autoPlay);
     updateSongClock(0, NaN);
+    updatePlayerScreenState();
     return;
   }
 
@@ -1123,6 +1136,7 @@ function playSongByIndex(index, options = {}) {
   updatePlayButtonMode("audio");
   updateSongClock(0, NaN);
   setMiniPlayerPlaying(false);
+  updatePlayerScreenState();
   if (autoPlay) {
     els.bgMusic.play().catch(() => {});
   }
@@ -1138,6 +1152,18 @@ function playPrevSong(autoPlay = true) {
   const prevIndex = findNextPlayableSongIndex(activeSongIndex, -1);
   if (prevIndex === -1) return;
   playSongByIndex(prevIndex, { autoPlay });
+}
+
+function playRandomSong(autoPlay = true) {
+  const songs = siteData?.songs?.items || [];
+  if (!songs.length) return;
+  const playableIndexes = songs
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => cleanText(item?.url))
+    .map(({ index }) => index);
+  if (!playableIndexes.length) return;
+  const pick = playableIndexes[Math.floor(Math.random() * playableIndexes.length)];
+  playSongByIndex(pick, { autoPlay });
 }
 
 function applyData(data) {
@@ -1621,9 +1647,23 @@ function setupEvents() {
     });
   }
 
+  if (els.shuffleBtn) {
+    els.shuffleBtn.addEventListener("click", () => {
+      playRandomSong(true);
+    });
+  }
+
   if (els.nextSongBtn) {
     els.nextSongBtn.addEventListener("click", () => {
       playNextSong(true);
+    });
+  }
+
+  if (els.repeatBtn) {
+    els.repeatBtn.addEventListener("click", () => {
+      repeatCurrentSong = !repeatCurrentSong;
+      els.repeatBtn.classList.toggle("active", repeatCurrentSong);
+      els.repeatBtn.title = repeatCurrentSong ? "Repeat current song: on" : "Repeat current song: off";
     });
   }
 
@@ -1652,6 +1692,11 @@ function setupEvents() {
     });
     els.bgMusic.addEventListener("ended", () => {
       updateSongClock(els.bgMusic.duration || 0, els.bgMusic.duration);
+      if (repeatCurrentSong) {
+        els.bgMusic.currentTime = 0;
+        els.bgMusic.play().catch(() => {});
+        return;
+      }
       playNextSong(true);
     });
   }
