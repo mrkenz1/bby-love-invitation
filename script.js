@@ -95,8 +95,15 @@ const els = {
   reasonsTitle: document.getElementById("reasonsTitle"),
   closingLine: document.getElementById("closingLine"),
   songList: document.getElementById("songList"),
+  miniPlayer: document.getElementById("miniPlayer"),
   nowPlayingSong: document.getElementById("nowPlayingSong"),
   nowPlayingArtist: document.getElementById("nowPlayingArtist"),
+  nowPlayingCover: document.getElementById("nowPlayingCover"),
+  nowPlayingCoverFallback: document.getElementById("nowPlayingCoverFallback"),
+  songWave: document.getElementById("songWave"),
+  songTimeCurrent: document.getElementById("songTimeCurrent"),
+  songTimeTotal: document.getElementById("songTimeTotal"),
+  songTimeProgress: document.getElementById("songTimeProgress"),
   playPauseBtn: document.getElementById("playPauseBtn"),
   prevSongBtn: document.getElementById("prevSongBtn"),
   nextSongBtn: document.getElementById("nextSongBtn"),
@@ -150,6 +157,8 @@ let activeVideoIndex = 0;
 let adminSongDraft = [];
 let adminVideoDraft = [];
 let currentShareLinks = null;
+const songMetaLookupTimers = new Map();
+const songMetaLookupVersions = new Map();
 const isAdmin = checkAdminAccess();
 
 siteData = loadInitialSiteData();
@@ -236,14 +245,10 @@ function normalizeData(raw) {
     ? source.letter.body.map((item) => cleanText(item)).filter(Boolean)
     : [];
 
-  const safeSongItems = (songItems.length ? songItems : clone(DEFAULT_DATA.songs.items))
-    .map((item, index) => {
-      const song = cleanText(item?.song, `Song ${index + 1}`);
-      const artist = cleanText(item?.artist, "Unknown Artist");
-      const url = cleanText(item?.url);
-      return { song, artist, url };
-    })
-    .filter((item) => item.song && item.artist);
+  const safeSongItems = normalizeSongItems(
+    songItems.length ? songItems : clone(DEFAULT_DATA.songs.items),
+    DEFAULT_DATA.songs.items
+  );
 
   if (legacyMusicUrl && safeSongItems[0] && !safeSongItems[0].url) {
     safeSongItems[0].url = legacyMusicUrl;
@@ -392,6 +397,7 @@ function updateNowPlaying(item) {
   if (!item) return;
   if (els.nowPlayingSong) els.nowPlayingSong.textContent = item.song;
   if (els.nowPlayingArtist) els.nowPlayingArtist.textContent = item.artist;
+  updateNowPlayingCover(item);
 }
 
 function setTheme(theme) {
@@ -399,6 +405,52 @@ function setTheme(theme) {
   root.style.setProperty("--bg", theme.bg);
   root.style.setProperty("--accent", theme.accent);
   root.style.setProperty("--accent-deep", theme.accentDeep);
+}
+
+function buildSongWaveBars() {
+  if (!els.songWave) return;
+  if (els.songWave.children.length > 0) return;
+
+  const heights = [26, 48, 66, 38, 54, 78, 42, 62, 35, 72, 55, 44, 68, 33, 60, 75, 40, 64, 37, 58, 70, 43, 52, 67, 36, 61, 74, 39];
+  heights.forEach((height, index) => {
+    const bar = document.createElement("span");
+    bar.className = "song-wave-bar";
+    bar.style.setProperty("--h", `${height}%`);
+    bar.style.setProperty("--delay", `${(index % 9) * 0.08}s`);
+    els.songWave.appendChild(bar);
+  });
+}
+
+function formatClockTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "--:--";
+  const total = Math.floor(seconds);
+  const min = Math.floor(total / 60);
+  const sec = total % 60;
+  return `${min}:${String(sec).padStart(2, "0")}`;
+}
+
+function updateSongClock(currentSeconds = 0, totalSeconds = NaN) {
+  if (els.songTimeCurrent) {
+    els.songTimeCurrent.textContent = formatClockTime(currentSeconds);
+  }
+
+  if (els.songTimeTotal) {
+    els.songTimeTotal.textContent = formatClockTime(totalSeconds);
+  }
+
+  if (els.songTimeProgress) {
+    if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) {
+      els.songTimeProgress.style.width = "0%";
+    } else {
+      const ratio = Math.max(0, Math.min(1, currentSeconds / totalSeconds));
+      els.songTimeProgress.style.width = `${ratio * 100}%`;
+    }
+  }
+}
+
+function setMiniPlayerPlaying(isPlaying) {
+  if (!els.miniPlayer) return;
+  els.miniPlayer.classList.toggle("playing", Boolean(isPlaying));
 }
 
 function normalizeYoutubeId(value) {
@@ -439,6 +491,10 @@ function getYoutubeEmbedUrl(videoId) {
   return `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`;
 }
 
+function getYoutubeThumbUrl(videoId) {
+  return videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "";
+}
+
 function isSoundCloudUrl(url) {
   const raw = cleanText(url);
   if (!raw) return false;
@@ -452,9 +508,255 @@ function isSoundCloudUrl(url) {
   }
 }
 
+function getSongDedupKey(songRaw, artistRaw, urlRaw) {
+  if (urlRaw) {
+    const youtubeId = extractYoutubeId(urlRaw);
+    if (youtubeId) return `yt:${youtubeId}`;
+
+    try {
+      const parsed = new URL(urlRaw);
+      const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+      const path = parsed.pathname.replace(/\/+$/, "").toLowerCase();
+
+      // Ignore share/query noise so the same track does not get saved twice.
+      parsed.searchParams.delete("si");
+      Array.from(parsed.searchParams.keys()).forEach((key) => {
+        if (key.toLowerCase().startsWith("utm_")) {
+          parsed.searchParams.delete(key);
+        }
+      });
+
+      const query = parsed.searchParams.toString();
+      return `url:${host}${path}${query ? `?${query}` : ""}`;
+    } catch (error) {
+      return `url:${urlRaw.toLowerCase()}`;
+    }
+  }
+
+  return `meta:${songRaw.toLowerCase()}|${artistRaw.toLowerCase()}`;
+}
+
+function normalizeSongItems(items, fallbackItems) {
+  const seen = new Set();
+  let labelIndex = 0;
+
+  const cleaned = (items || [])
+    .map((item) => {
+      const songRaw = cleanText(item?.song);
+      const artistRaw = cleanText(item?.artist);
+      const urlRaw = cleanText(item?.url);
+      if (!songRaw && !artistRaw && !urlRaw) return null;
+
+      const dedupKey = getSongDedupKey(songRaw, artistRaw, urlRaw);
+      if (seen.has(dedupKey)) return null;
+      seen.add(dedupKey);
+
+      labelIndex += 1;
+      return {
+        song: songRaw || `Song ${labelIndex}`,
+        artist: artistRaw || "Unknown Artist",
+        url: urlRaw
+      };
+    })
+    .filter(Boolean);
+
+  return cleaned.length ? cleaned : clone(fallbackItems);
+}
+
+function isPlaceholderSongTitle(value) {
+  const text = cleanText(value);
+  if (!text) return true;
+  return /^song\s*\d+$/i.test(text);
+}
+
+function isPlaceholderArtistName(value) {
+  const text = cleanText(value);
+  if (!text) return true;
+  return /^unknown artist$/i.test(text);
+}
+
+function cleanFetchedSongTitle(value) {
+  return cleanText(value)
+    .replace(/\((official|lyric|lyrics|audio|video)[^)]*\)/gi, "")
+    .replace(/\[(official|lyric|lyrics|audio|video)[^\]]*\]/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function deriveSongAndArtist(metadata) {
+  const rawTitle = cleanText(metadata?.title);
+  const rawAuthor = cleanText(metadata?.author_name || metadata?.author || metadata?.uploader);
+  if (!rawTitle && !rawAuthor) return null;
+
+  const normalizedTitle = cleanFetchedSongTitle(rawTitle);
+  const splitMatch = normalizedTitle.match(/^(.+?)\s[-–—]\s(.+)$/);
+
+  if (splitMatch) {
+    const left = cleanText(splitMatch[1]);
+    const right = cleanText(splitMatch[2]);
+    if (left && right) {
+      return {
+        song: cleanFetchedSongTitle(right),
+        artist: rawAuthor || left
+      };
+    }
+  }
+
+  return {
+    song: normalizedTitle || "",
+    artist: rawAuthor || ""
+  };
+}
+
+function buildSongMetadataLookupUrls(sourceUrl) {
+  const raw = cleanText(sourceUrl);
+  if (!raw) return [];
+
+  const urls = [];
+  const youtubeId = extractYoutubeId(raw);
+
+  if (youtubeId) {
+    const canonical = `https://www.youtube.com/watch?v=${youtubeId}`;
+    urls.push(`https://www.youtube.com/oembed?url=${encodeURIComponent(canonical)}&format=json`);
+    urls.push(`https://noembed.com/embed?url=${encodeURIComponent(canonical)}`);
+    return urls;
+  }
+
+  if (isSoundCloudUrl(raw)) {
+    urls.push(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(raw)}`);
+    urls.push(`https://noembed.com/embed?url=${encodeURIComponent(raw)}`);
+    return urls;
+  }
+
+  urls.push(`https://noembed.com/embed?url=${encodeURIComponent(raw)}`);
+  return urls;
+}
+
+async function fetchJsonWithTimeout(url, timeoutMs = 7000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (error) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchSongMetadata(sourceUrl) {
+  const lookupUrls = buildSongMetadataLookupUrls(sourceUrl);
+  for (const lookupUrl of lookupUrls) {
+    const data = await fetchJsonWithTimeout(lookupUrl);
+    if (!data) continue;
+    const parsed = deriveSongAndArtist(data);
+    if (parsed?.song || parsed?.artist) return parsed;
+  }
+  return null;
+}
+
+function setAdminSongInputValue(index, field, value) {
+  if (!els.adminSongRows) return;
+  const selector = `input[data-action="song-input"][data-index="${index}"][data-field="${field}"]`;
+  const input = els.adminSongRows.querySelector(selector);
+  if (input instanceof HTMLInputElement) {
+    input.value = value;
+  }
+}
+
+async function autofillSongMetadata(index, urlSnapshot, version) {
+  const metadata = await fetchSongMetadata(urlSnapshot);
+  if (!metadata) return;
+
+  if (songMetaLookupVersions.get(index) !== version) return;
+  const item = adminSongDraft[index];
+  if (!item) return;
+  if (cleanText(item.url) !== urlSnapshot) return;
+
+  const shouldFillSong = isPlaceholderSongTitle(item.song);
+  const shouldFillArtist = isPlaceholderArtistName(item.artist);
+  if (!shouldFillSong && !shouldFillArtist) return;
+
+  let changed = false;
+  if (shouldFillSong && metadata.song) {
+    item.song = metadata.song;
+    setAdminSongInputValue(index, "song", metadata.song);
+    changed = true;
+  }
+
+  if (shouldFillArtist && metadata.artist) {
+    item.artist = metadata.artist;
+    setAdminSongInputValue(index, "artist", metadata.artist);
+    changed = true;
+  }
+
+  if (changed) {
+    setAdminStatus("Song title and artist filled automatically.");
+  }
+}
+
+function scheduleSongMetadataAutofill(index) {
+  if (!adminSongDraft[index]) return;
+  const urlSnapshot = cleanText(adminSongDraft[index].url);
+  if (!urlSnapshot) return;
+
+  const previousTimer = songMetaLookupTimers.get(index);
+  if (previousTimer) clearTimeout(previousTimer);
+
+  const nextVersion = (songMetaLookupVersions.get(index) || 0) + 1;
+  songMetaLookupVersions.set(index, nextVersion);
+
+  const timer = setTimeout(() => {
+    songMetaLookupTimers.delete(index);
+    autofillSongMetadata(index, urlSnapshot, nextVersion);
+  }, 550);
+
+  songMetaLookupTimers.set(index, timer);
+}
+
+function clearSongMetadataAutofillState() {
+  songMetaLookupTimers.forEach((timerId) => clearTimeout(timerId));
+  songMetaLookupTimers.clear();
+  songMetaLookupVersions.clear();
+}
+
 function getSoundCloudEmbedUrl(trackUrl, autoPlay = false) {
   const encoded = encodeURIComponent(trackUrl);
   return `https://w.soundcloud.com/player/?url=${encoded}&color=%23ea2d6f&auto_play=${autoPlay ? "true" : "false"}&hide_related=false&show_comments=false&show_user=true&show_reposts=false&show_teaser=true&visual=false`;
+}
+
+function getSongCoverUrl(song) {
+  const url = cleanText(song?.url);
+  const youtubeId = extractYoutubeId(url);
+  if (youtubeId) return getYoutubeThumbUrl(youtubeId);
+  return "";
+}
+
+function updateNowPlayingCover(song) {
+  if (!els.nowPlayingCover || !els.nowPlayingCoverFallback) return;
+  const coverUrl = getSongCoverUrl(song);
+
+  if (!coverUrl) {
+    els.nowPlayingCover.hidden = true;
+    els.nowPlayingCover.removeAttribute("src");
+    els.nowPlayingCoverFallback.hidden = false;
+    return;
+  }
+
+  els.nowPlayingCoverFallback.hidden = true;
+  els.nowPlayingCover.hidden = false;
+  els.nowPlayingCover.src = coverUrl;
+  els.nowPlayingCover.onerror = () => {
+    els.nowPlayingCover.hidden = true;
+    els.nowPlayingCoverFallback.hidden = false;
+  };
 }
 
 function getBasePageUrl() {
@@ -487,7 +789,7 @@ function updatePlayButtonMode(mode) {
   if (!els.playPauseBtn) return;
 
   els.playPauseBtn.dataset.state = "paused";
-  els.playPauseBtn.textContent = "play";
+  els.playPauseBtn.textContent = "\u25B6";
 
   if (mode === "audio") {
     els.playPauseBtn.disabled = false;
@@ -530,6 +832,8 @@ function clearMusicPlayers() {
   els.bgMusic.removeAttribute("src");
   els.bgMusic.load();
   resetIframe(els.bgMusicEmbed);
+  setMiniPlayerPlaying(false);
+  updateSongClock(0, NaN);
 }
 
 function getVideoByIndex(index) {
@@ -666,6 +970,8 @@ function playSongByIndex(index, options = {}) {
   if (!songUrl) {
     clearMusicPlayers();
     updatePlayButtonMode("none");
+    setMiniPlayerPlaying(false);
+    updateSongClock(0, NaN);
     return;
   }
 
@@ -680,6 +986,8 @@ function playSongByIndex(index, options = {}) {
     els.bgMusicEmbed.title = "YouTube music player";
     els.bgMusicEmbed.src = `${getYoutubeEmbedUrl(firstId)}&playsinline=1&autoplay=${autoplayParam}${playlistParam}`;
     updatePlayButtonMode("youtube");
+    setMiniPlayerPlaying(autoPlay);
+    updateSongClock(0, NaN);
     return;
   }
 
@@ -689,14 +997,18 @@ function playSongByIndex(index, options = {}) {
     els.bgMusicEmbed.title = "SoundCloud music player";
     els.bgMusicEmbed.src = getSoundCloudEmbedUrl(songUrl, autoPlay);
     updatePlayButtonMode("soundcloud");
+    setMiniPlayerPlaying(autoPlay);
+    updateSongClock(0, NaN);
     return;
   }
 
   resetIframe(els.bgMusicEmbed);
   if (!els.bgMusic) return;
-  els.bgMusic.style.display = "block";
+  els.bgMusic.style.display = "none";
   els.bgMusic.src = songUrl;
   updatePlayButtonMode("audio");
+  updateSongClock(0, NaN);
+  setMiniPlayerPlaying(false);
   if (autoPlay) {
     els.bgMusic.play().catch(() => {});
   }
@@ -775,11 +1087,13 @@ function playOrPause() {
   if (els.bgMusic.paused) {
     els.bgMusic.play().catch(() => {});
     els.playPauseBtn.dataset.state = "playing";
-    els.playPauseBtn.textContent = "pause";
+    els.playPauseBtn.textContent = "\u275A\u275A";
+    setMiniPlayerPlaying(true);
   } else {
     els.bgMusic.pause();
     els.playPauseBtn.dataset.state = "paused";
-    els.playPauseBtn.textContent = "play";
+    els.playPauseBtn.textContent = "\u25B6";
+    setMiniPlayerPlaying(false);
   }
 }
 
@@ -799,21 +1113,7 @@ function createEmptyVideoItem() {
 }
 
 function normalizeAdminSongDraft(items) {
-  const cleaned = (items || [])
-    .map((item, index) => {
-      const songRaw = cleanText(item?.song);
-      const artistRaw = cleanText(item?.artist);
-      const urlRaw = cleanText(item?.url);
-      if (!songRaw && !artistRaw && !urlRaw) return null;
-      return {
-        song: songRaw || `Song ${index + 1}`,
-        artist: artistRaw || "Unknown Artist",
-        url: urlRaw
-      };
-    })
-    .filter(Boolean);
-
-  return cleaned.length ? cleaned : clone(DEFAULT_DATA.songs.items);
+  return normalizeSongItems(items, DEFAULT_DATA.songs.items);
 }
 
 function normalizeAdminVideoDraft(items) {
@@ -836,6 +1136,7 @@ function normalizeAdminVideoDraft(items) {
 
 function renderAdminSongRows() {
   if (!els.adminSongRows) return;
+  clearSongMetadataAutofillState();
   els.adminSongRows.innerHTML = "";
 
   adminSongDraft.forEach((item, index) => {
@@ -900,12 +1201,15 @@ function setupAdminListEditors() {
   if (els.adminSongRows) {
     els.adminSongRows.addEventListener("input", (event) => {
       const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
+      if (!(target instanceof HTMLInputElement)) return;
       if (!target || target.dataset.action !== "song-input") return;
       const index = Number(target.dataset.index);
       const field = target.dataset.field;
       if (!adminSongDraft[index] || !field) return;
       adminSongDraft[index][field] = target.value;
+      if (field === "url") {
+        scheduleSongMetadataAutofill(index);
+      }
     });
 
     els.adminSongRows.addEventListener("click", (event) => {
@@ -1047,6 +1351,12 @@ function fillAdminForm(data) {
   if (!adminSongDraft.length) adminSongDraft = [createEmptySongItem()];
   renderAdminVideoRows();
   renderAdminSongRows();
+  adminSongDraft.forEach((item, index) => {
+    const hasUrl = cleanText(item.url);
+    if (!hasUrl) return;
+    if (!isPlaceholderSongTitle(item.song) && !isPlaceholderArtistName(item.artist)) return;
+    scheduleSongMetadataAutofill(index);
+  });
 }
 
 function collectAdminFormData() {
@@ -1211,14 +1521,23 @@ function setupEvents() {
     els.bgMusic.addEventListener("pause", () => {
       if (!els.playPauseBtn) return;
       els.playPauseBtn.dataset.state = "paused";
-      els.playPauseBtn.textContent = "play";
+      els.playPauseBtn.textContent = "\u25B6";
+      setMiniPlayerPlaying(false);
     });
     els.bgMusic.addEventListener("play", () => {
       if (!els.playPauseBtn) return;
       els.playPauseBtn.dataset.state = "playing";
-      els.playPauseBtn.textContent = "pause";
+      els.playPauseBtn.textContent = "\u275A\u275A";
+      setMiniPlayerPlaying(true);
+    });
+    els.bgMusic.addEventListener("loadedmetadata", () => {
+      updateSongClock(els.bgMusic.currentTime || 0, els.bgMusic.duration);
+    });
+    els.bgMusic.addEventListener("timeupdate", () => {
+      updateSongClock(els.bgMusic.currentTime || 0, els.bgMusic.duration);
     });
     els.bgMusic.addEventListener("ended", () => {
+      updateSongClock(els.bgMusic.duration || 0, els.bgMusic.duration);
       playNextSong(true);
     });
   }
@@ -1231,6 +1550,7 @@ function setupEvents() {
 }
 
 buildHearts();
+buildSongWaveBars();
 applyData(siteData);
 setupEvents();
 setupAdminPanel();
