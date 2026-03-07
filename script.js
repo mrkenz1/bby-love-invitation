@@ -378,6 +378,27 @@ function isVideoMediaUrl(url) {
   return /\.(mp4|webm|ogg|mov|m4v)$/i.test(getMediaPath(value));
 }
 
+function getCompanionVideoUrl(url) {
+  const value = cleanText(url);
+  const path = getMediaPath(value);
+  if (!value || !path) return "";
+  if (!/\/?[^/]*video[^/]*\.(jpg|jpeg|png|webp)$/i.test(path)) return "";
+  return value.replace(/\.(jpg|jpeg|png|webp)(?=($|[?#]))/i, ".mp4");
+}
+
+function getMemoryMediaSpec(url) {
+  const value = cleanText(url);
+  if (!value) return null;
+  if (isVideoMediaUrl(value)) {
+    return { type: "video", src: value, poster: "" };
+  }
+  const companionVideoUrl = getCompanionVideoUrl(value);
+  if (companionVideoUrl) {
+    return { type: "video", src: companionVideoUrl, poster: value };
+  }
+  return { type: "image", src: value, poster: "" };
+}
+
 function pauseOtherMemoryVideos(activeVideo) {
   if (!els.memoryGrid) return;
   els.memoryGrid.querySelectorAll("video").forEach((video) => {
@@ -388,25 +409,37 @@ function pauseOtherMemoryVideos(activeVideo) {
 function renderMemoryGrid(mediaUrls) {
   if (!els.memoryGrid) return;
   els.memoryGrid.innerHTML = "";
+  let hasAutoplayVideo = false;
 
   mediaUrls.forEach((url, index) => {
     const figure = document.createElement("figure");
     figure.className = "memory-card";
+    const media = getMemoryMediaSpec(url);
+    if (!media) return;
 
-    if (isVideoMediaUrl(url)) {
+    if (media.type === "video") {
       figure.classList.add("memory-card-video");
       const video = document.createElement("video");
-      video.src = url;
+      video.src = media.src;
       video.controls = true;
       video.preload = "metadata";
+      video.loop = true;
+      video.muted = true;
+      video.defaultMuted = true;
       video.playsInline = true;
       video.setAttribute("playsinline", "");
+      video.setAttribute("muted", "");
       video.setAttribute("aria-label", `Memory video ${index + 1}`);
+      if (media.poster) video.poster = media.poster;
+      if (!hasAutoplayVideo) {
+        video.autoplay = true;
+        hasAutoplayVideo = true;
+      }
       video.addEventListener("play", () => pauseOtherMemoryVideos(video));
       figure.appendChild(video);
     } else {
       const img = document.createElement("img");
-      img.src = url;
+      img.src = media.src;
       img.alt = `Memory photo ${index + 1}`;
       img.loading = "lazy";
       figure.appendChild(img);
