@@ -3,6 +3,8 @@ const ADMIN_SESSION_KEY = "bby_admin_v1";
 const ADMIN_PASSCODE = "bby2026";
 const HEART_COUNT = 24;
 const QR_IMAGE_ENDPOINT = "https://api.qrserver.com/v1/create-qr-code/";
+const IMAGE_MEDIA_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "gif", "avif"];
+const VIDEO_MEDIA_EXTENSIONS = ["mp4", "webm", "ogg", "mov", "m4v"];
 
 const DEFAULT_DATA = {
   theme: {
@@ -181,6 +183,78 @@ function cleanText(value, fallback = "") {
   if (value === null || value === undefined) return fallback;
   const text = String(value).trim();
   return text || fallback;
+}
+
+function getBasePageDirectoryPath() {
+  const pathname = cleanText(window.location.pathname, "/");
+  return pathname.endsWith("/") ? pathname : pathname.replace(/[^/]*$/, "");
+}
+
+function replaceUrlExtension(url, extension) {
+  const value = cleanText(url);
+  if (!value) return "";
+  if (!/\.[A-Za-z0-9]+(?=($|[?#]))/.test(value)) return value;
+  return value.replace(/\.[A-Za-z0-9]+(?=($|[?#]))/, `.${extension}`);
+}
+
+function toProjectRelativeUrl(pathname) {
+  const path = cleanText(pathname);
+  if (!path) return "";
+  const baseDir = getBasePageDirectoryPath();
+  if (path.startsWith(baseDir)) {
+    return `.${path.slice(baseDir.length - 1)}`;
+  }
+  return path;
+}
+
+function normalizeMediaResourceUrl(value, options = {}) {
+  const raw = cleanText(value);
+  if (!raw) return "";
+
+  const youtubeId = extractYoutubeId(raw);
+  if (youtubeId) return `https://youtu.be/${youtubeId}`;
+
+  const { keepSearch = false } = options;
+
+  try {
+    const parsed = new URL(raw, window.location.href);
+    parsed.hash = "";
+    parsed.searchParams.delete("si");
+    Array.from(parsed.searchParams.keys()).forEach((key) => {
+      if (key.toLowerCase().startsWith("utm_")) {
+        parsed.searchParams.delete(key);
+      }
+    });
+
+    if (parsed.origin === window.location.origin) {
+      const query = keepSearch ? parsed.searchParams.toString() : "";
+      const relative = toProjectRelativeUrl(parsed.pathname);
+      return `${relative}${query ? `?${query}` : ""}`;
+    }
+
+    if (isSoundCloudUrl(raw)) {
+      return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
+    }
+
+    const query = parsed.searchParams.toString();
+    return `${parsed.origin}${parsed.pathname}${query ? `?${query}` : ""}`;
+  } catch (error) {
+    return raw;
+  }
+}
+
+function normalizeMemoryMediaItems(items, fallbackItems = []) {
+  const seen = new Set();
+  const cleaned = (items || [])
+    .map((item) => normalizeMediaResourceUrl(item))
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (!item || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+  return cleaned.length ? cleaned : clone(fallbackItems);
 }
 
 function toBase64UrlFromUtf8(text) {
