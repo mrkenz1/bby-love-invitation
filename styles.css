@@ -346,7 +346,7 @@ body {
 
 .song-wave {
   margin-top: 0.9rem;
-  height: 70px;
+  height: 82px;
   padding: 0.35rem 0.45rem 0.45rem;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -365,9 +365,8 @@ body {
   transform-origin: bottom center;
   opacity: 0.92;
   background: linear-gradient(180deg, #fff, #fff);
-  animation: wavePulse 1.2s ease-in-out infinite;
-  animation-delay: var(--delay, 0s);
-  animation-play-state: paused;
+  transform: scaleY(0.52);
+  transition: transform 0.11s linear, opacity 0.11s linear;
 }
 
 .song-wave-bar:nth-child(6n + 1) {
@@ -392,20 +391,6 @@ body {
 
 .song-wave-bar:nth-child(6n + 6) {
   background: linear-gradient(180deg, #91d45f, #6db53e);
-}
-
-.mini-player.playing .song-wave-bar {
-  animation-play-state: running;
-}
-
-@keyframes wavePulse {
-  0%,
-  100% {
-    transform: scaleY(0.35);
-  }
-  50% {
-    transform: scaleY(1);
-  }
 }
 
 .song-time-row {
@@ -503,6 +488,7 @@ body {
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: #000;
+  min-height: 290px;
 }
 
 .reasons-card h3 {
@@ -592,7 +578,7 @@ body {
 .bg-music-embed {
   display: none;
   width: 100%;
-  min-height: 210px;
+  min-height: 290px;
   margin: 0;
   border: 0;
   border-radius: 0;
@@ -803,7 +789,7 @@ body.admin-mode .page {
   }
 
   .bg-music-embed {
-    min-height: 190px;
+    min-height: 240px;
   }
 
   .memory-grid {
@@ -856,7 +842,7 @@ body.admin-mode .page {
   }
 
   .song-wave {
-    height: 62px;
+    height: 70px;
   }
 
   .controls {
@@ -864,7 +850,7 @@ body.admin-mode .page {
   }
 
   .bg-music-embed {
-    min-height: 170px;
+    min-height: 210px;
   }
 
   .admin-actions {

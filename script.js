@@ -159,6 +159,12 @@ let adminVideoDraft = [];
 let currentShareLinks = null;
 const songMetaLookupTimers = new Map();
 const songMetaLookupVersions = new Map();
+let songWaveBars = [];
+let songWaveFrameId = 0;
+let songWaveAudioContext = null;
+let songWaveAnalyser = null;
+let songWaveAudioData = null;
+let songWaveAudioSource = null;
 const isAdmin = checkAdminAccess();
 
 siteData = loadInitialSiteData();
@@ -416,9 +422,113 @@ function buildSongWaveBars() {
     const bar = document.createElement("span");
     bar.className = "song-wave-bar";
     bar.style.setProperty("--h", `${height}%`);
-    bar.style.setProperty("--delay", `${(index % 9) * 0.08}s`);
+    bar.dataset.base = String(height / 100);
+    bar.dataset.live = String((height / 100) * 0.52);
+    bar.style.transform = `scaleY(${(height / 100) * 0.52})`;
+    bar.style.opacity = "0.72";
     els.songWave.appendChild(bar);
   });
+
+  songWaveBars = Array.from(els.songWave.querySelectorAll(".song-wave-bar"));
+}
+
+function ensureSongWaveBars() {
+  if (songWaveBars.length) return songWaveBars;
+  if (!els.songWave) return [];
+  songWaveBars = Array.from(els.songWave.querySelectorAll(".song-wave-bar"));
+  return songWaveBars;
+}
+
+function ensureSongWaveAnalyser() {
+  if (!els.bgMusic) return false;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return false;
+
+  try {
+    if (!songWaveAudioContext) {
+      songWaveAudioContext = new AudioContextClass();
+    }
+
+    if (!songWaveAudioSource) {
+      songWaveAudioSource = songWaveAudioContext.createMediaElementSource(els.bgMusic);
+    }
+
+    if (!songWaveAnalyser) {
+      songWaveAnalyser = songWaveAudioContext.createAnalyser();
+      songWaveAnalyser.fftSize = 128;
+      songWaveAnalyser.smoothingTimeConstant = 0.82;
+      songWaveAudioData = new Uint8Array(songWaveAnalyser.frequencyBinCount);
+      songWaveAudioSource.connect(songWaveAnalyser);
+      songWaveAnalyser.connect(songWaveAudioContext.destination);
+    }
+
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+function resumeSongWaveAnalyser() {
+  if (!songWaveAudioContext) return;
+  if (songWaveAudioContext.state === "suspended") {
+    songWaveAudioContext.resume().catch(() => {});
+  }
+}
+
+function renderSongWaveFrame(timestamp) {
+  const bars = ensureSongWaveBars();
+  if (!bars.length) {
+    songWaveFrameId = requestAnimationFrame(renderSongWaveFrame);
+    return;
+  }
+
+  const isPlaying = Boolean(els.miniPlayer?.classList.contains("playing"));
+  let audioDriven = false;
+
+  if (isPlaying && els.bgMusic && !els.bgMusic.paused && cleanText(els.bgMusic.getAttribute("src")) && songWaveAnalyser && songWaveAudioData) {
+    try {
+      songWaveAnalyser.getByteFrequencyData(songWaveAudioData);
+      audioDriven = true;
+    } catch (error) {
+      audioDriven = false;
+    }
+  }
+
+  const maxDataIndex = songWaveAudioData ? Math.max(0, songWaveAudioData.length - 1) : 0;
+
+  bars.forEach((bar, index) => {
+    const base = Number(bar.dataset.base || 0.32);
+    const previous = Number(bar.dataset.live || base);
+    let next = base * 0.52;
+
+    if (isPlaying) {
+      if (audioDriven && maxDataIndex > 0) {
+        const sampleIndex = Math.floor((index / Math.max(1, bars.length - 1)) * maxDataIndex);
+        const normalized = (songWaveAudioData[sampleIndex] || 0) / 255;
+        next = Math.max(base * 0.82, 0.2 + normalized * 1.02);
+      } else {
+        const t = timestamp * 0.0032;
+        const pulse =
+          Math.sin(t + index * 0.58) * 0.5 +
+          Math.sin(t * 0.57 + index * 0.91) * 0.33 +
+          Math.sin(t * 1.14 + index * 0.23) * 0.17;
+        const normalized = 0.5 + pulse * 0.5;
+        next = Math.max(base * 0.82, 0.2 + normalized * 0.78);
+      }
+    }
+
+    const eased = previous + (next - previous) * 0.33;
+    bar.dataset.live = String(eased);
+    bar.style.transform = `scaleY(${eased.toFixed(3)})`;
+    bar.style.opacity = (0.52 + eased * 0.48).toFixed(3);
+  });
+
+  songWaveFrameId = requestAnimationFrame(renderSongWaveFrame);
+}
+
+function startSongWaveAnimation() {
+  if (songWaveFrameId) return;
+  songWaveFrameId = requestAnimationFrame(renderSongWaveFrame);
 }
 
 function formatClockTime(seconds) {
@@ -451,6 +561,10 @@ function updateSongClock(currentSeconds = 0, totalSeconds = NaN) {
 function setMiniPlayerPlaying(isPlaying) {
   if (!els.miniPlayer) return;
   els.miniPlayer.classList.toggle("playing", Boolean(isPlaying));
+  if (isPlaying) {
+    ensureSongWaveAnalyser();
+    resumeSongWaveAnalyser();
+  }
 }
 
 function normalizeYoutubeId(value) {
@@ -1551,6 +1665,7 @@ function setupEvents() {
 
 buildHearts();
 buildSongWaveBars();
+startSongWaveAnimation();
 applyData(siteData);
 setupEvents();
 setupAdminPanel();
