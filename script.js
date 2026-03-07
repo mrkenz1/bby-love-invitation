@@ -361,19 +361,57 @@ function renderLetterParagraphs(paragraphs) {
   });
 }
 
-function renderMemoryGrid(images) {
+function getMediaPath(url) {
+  const raw = cleanText(url).split("#")[0].split("?")[0];
+  if (!raw) return "";
+  try {
+    return new URL(raw, window.location.href).pathname.toLowerCase();
+  } catch (error) {
+    return raw.toLowerCase();
+  }
+}
+
+function isVideoMediaUrl(url) {
+  const value = cleanText(url).toLowerCase();
+  if (!value) return false;
+  if (value.startsWith("data:video/")) return true;
+  return /\.(mp4|webm|ogg|mov|m4v)$/i.test(getMediaPath(value));
+}
+
+function pauseOtherMemoryVideos(activeVideo) {
+  if (!els.memoryGrid) return;
+  els.memoryGrid.querySelectorAll("video").forEach((video) => {
+    if (video !== activeVideo) video.pause();
+  });
+}
+
+function renderMemoryGrid(mediaUrls) {
   if (!els.memoryGrid) return;
   els.memoryGrid.innerHTML = "";
 
-  images.forEach((url, index) => {
+  mediaUrls.forEach((url, index) => {
     const figure = document.createElement("figure");
     figure.className = "memory-card";
 
-    const img = document.createElement("img");
-    img.src = url;
-    img.alt = `Memory photo ${index + 1}`;
-    img.loading = "lazy";
-    figure.appendChild(img);
+    if (isVideoMediaUrl(url)) {
+      figure.classList.add("memory-card-video");
+      const video = document.createElement("video");
+      video.src = url;
+      video.controls = true;
+      video.preload = "metadata";
+      video.playsInline = true;
+      video.setAttribute("playsinline", "");
+      video.setAttribute("aria-label", `Memory video ${index + 1}`);
+      video.addEventListener("play", () => pauseOtherMemoryVideos(video));
+      figure.appendChild(video);
+    } else {
+      const img = document.createElement("img");
+      img.src = url;
+      img.alt = `Memory photo ${index + 1}`;
+      img.loading = "lazy";
+      figure.appendChild(img);
+    }
+
     els.memoryGrid.appendChild(figure);
   });
 }
