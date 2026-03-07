@@ -253,10 +253,10 @@ body {
 .reasons-card {
   border: 1px solid var(--line);
   border-radius: 20px;
-  background: #fff;
+  background: transparent;
   padding: 1.05rem;
   text-align: left;
-  box-shadow: 0 10px 22px rgba(127, 77, 96, 0.12);
+  box-shadow: none;
 }
 
 .player-title {
