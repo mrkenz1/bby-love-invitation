@@ -212,9 +212,9 @@ body {
 }
 
 .letter-card.open .letter-full {
-  max-height: 520px;
   opacity: 1;
   transform: translateY(0);
+  overflow: visible;
 }
 
 .letter-card.open .toggle-hint::after {
@@ -1127,6 +1127,10 @@ body.admin-mode .page {
   .letter-preview,
   .letter-full p {
     font-size: 1.07rem;
+  }
+
+  .letter-card {
+    padding: 1.05rem 1rem 1rem;
   }
 
   .mini-player {
