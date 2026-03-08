@@ -194,11 +194,8 @@ body {
 }
 
 .letter-full {
-  max-height: 0;
-  overflow: hidden;
-  opacity: 0;
-  transform: translateY(4px);
-  transition: max-height 0.45s ease, opacity 0.25s ease, transform 0.25s ease;
+  display: none;
+  margin-top: 0.2rem;
 }
 
 .toggle-hint {
@@ -212,9 +209,11 @@ body {
 }
 
 .letter-card.open .letter-full {
-  opacity: 1;
-  transform: translateY(0);
-  overflow: visible;
+  display: block;
+}
+
+.letter-card.open .letter-preview {
+  display: none;
 }
 
 .letter-card.open .toggle-hint::after {

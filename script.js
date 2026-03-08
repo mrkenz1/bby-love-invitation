@@ -1059,7 +1059,6 @@ function setLetterOpenState(isOpen) {
   if (!els.letterCard) return;
   els.letterCard.classList.toggle("open", isOpen);
   els.letterCard.setAttribute("aria-expanded", String(isOpen));
-  syncLetterFullHeight(isOpen);
 }
 
 function renderLetterParagraphs(paragraphs) {
@@ -1071,20 +1070,6 @@ function renderLetterParagraphs(paragraphs) {
     p.textContent = paragraph;
     els.letterFull.appendChild(p);
   });
-
-  syncLetterFullHeight(els.letterCard?.classList.contains("open"));
-}
-
-function syncLetterFullHeight(isOpen = els.letterCard?.classList.contains("open")) {
-  if (!els.letterFull) return;
-  if (!isOpen) {
-    els.letterFull.style.maxHeight = "0px";
-    return;
-  }
-
-  els.letterFull.style.maxHeight = "none";
-  const nextHeight = els.letterFull.scrollHeight;
-  els.letterFull.style.maxHeight = `${nextHeight}px`;
 }
 
 function getMediaPath(url) {
@@ -2969,7 +2954,3 @@ siteData = loadInitialSiteData();
 applyData(siteData);
 setupEvents();
 setupAdminPanel();
-
-window.addEventListener("resize", () => {
-  syncLetterFullHeight(els.letterCard?.classList.contains("open"));
-});
