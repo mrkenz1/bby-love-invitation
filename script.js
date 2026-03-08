@@ -1,10 +1,14 @@
 const STORAGE_KEY = "bby_site_data_v1";
+const PROFILE_STORAGE_KEY = "bby_site_profiles_v1";
+const ACTIVE_PROFILE_KEY = "bby_active_profile_v1";
 const ADMIN_SESSION_KEY = "bby_admin_v1";
 const ADMIN_PASSCODE = "bby2026";
 const HEART_COUNT = 24;
 const QR_IMAGE_ENDPOINT = "https://api.qrserver.com/v1/create-qr-code/";
 const QR_PINK_DARK = "214-33-94";
 const QR_PINK_LIGHT = "255-246-250";
+const PROFILE_QUERY_KEY = "pid";
+const DEFAULT_PROFILE_ID = "main";
 const IMAGE_MEDIA_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "gif", "avif"];
 const VIDEO_MEDIA_EXTENSIONS = ["mp4", "webm", "ogg", "mov", "m4v"];
 
@@ -138,7 +142,10 @@ const els = {
   adminQrTarget: document.getElementById("adminQrTarget"),
   generateQrBtn: document.getElementById("generateQrBtn"),
   downloadQrBtn: document.getElementById("downloadQrBtn"),
-  adminQrPreview: document.getElementById("adminQrPreview")
+  adminQrPreview: document.getElementById("adminQrPreview"),
+  adminProfileSelect: document.getElementById("adminProfileSelect"),
+  adminProfileNewBtn: document.getElementById("adminProfileNewBtn"),
+  adminProfileDeleteBtn: document.getElementById("adminProfileDeleteBtn")
 };
 
 const adminInputs = {
@@ -160,7 +167,9 @@ const adminInputs = {
   songsCardTitle: document.getElementById("adminSongsCardTitle"),
   songsCardSubtitle: document.getElementById("adminSongsCardSubtitle"),
   reasonsTitle: document.getElementById("adminReasonsTitle"),
-  closingLine: document.getElementById("adminClosingLine")
+  closingLine: document.getElementById("adminClosingLine"),
+  profileName: document.getElementById("adminProfileName"),
+  profileId: document.getElementById("adminProfileId")
 };
 
 let siteData = null;
@@ -179,6 +188,8 @@ let songWaveAudioData = null;
 let songWaveAudioSource = null;
 let repeatCurrentSong = false;
 let currentQrPreviewUrl = "";
+let profileStore = null;
+let activeProfileId = DEFAULT_PROFILE_ID;
 const isAdmin = checkAdminAccess();
 const LZ_URI_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-$";
 const LZ_URI_LOOKUP = Object.create(null);
@@ -195,6 +206,180 @@ function cleanText(value, fallback = "") {
   if (value === null || value === undefined) return fallback;
   const text = String(value).trim();
   return text || fallback;
+}
+
+function slugifyProfileId(value) {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
+
+function formatProfileLabel(profileId) {
+  const slug = slugifyProfileId(profileId);
+  if (!slug) return "Profile";
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function createProfileRecord(profileId, name, data) {
+  const normalizedId = slugifyProfileId(profileId) || DEFAULT_PROFILE_ID;
+  return {
+    id: normalizedId,
+    name: cleanText(name, formatProfileLabel(normalizedId)),
+    updatedAt: new Date().toISOString(),
+    data: normalizeData(data)
+  };
+}
+
+function loadLegacyData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : clone(DEFAULT_DATA);
+  } catch (error) {
+    return clone(DEFAULT_DATA);
+  }
+}
+
+function buildDefaultProfileStore(seedData = loadLegacyData()) {
+  const record = createProfileRecord(DEFAULT_PROFILE_ID, "Main", seedData);
+  return {
+    version: 1,
+    activeId: record.id,
+    order: [record.id],
+    items: {
+      [record.id]: record
+    }
+  };
+}
+
+function normalizeProfileStore(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const rawItems = source.items && typeof source.items === "object" ? source.items : {};
+  const rawOrder = Array.isArray(source.order) ? source.order : Object.keys(rawItems);
+  const items = {};
+  const order = [];
+
+  rawOrder.forEach((rawId) => {
+    const normalizedId = slugifyProfileId(rawId);
+    if (!normalizedId || items[normalizedId]) return;
+    const rawRecord = rawItems[rawId] || rawItems[normalizedId];
+    if (!rawRecord) return;
+    items[normalizedId] = createProfileRecord(normalizedId, rawRecord.name, rawRecord.data);
+    items[normalizedId].updatedAt = cleanText(rawRecord.updatedAt, items[normalizedId].updatedAt);
+    order.push(normalizedId);
+  });
+
+  Object.keys(rawItems).forEach((rawId) => {
+    const normalizedId = slugifyProfileId(rawId);
+    if (!normalizedId || items[normalizedId]) return;
+    const rawRecord = rawItems[rawId];
+    items[normalizedId] = createProfileRecord(normalizedId, rawRecord?.name, rawRecord?.data);
+    items[normalizedId].updatedAt = cleanText(rawRecord?.updatedAt, items[normalizedId].updatedAt);
+    order.push(normalizedId);
+  });
+
+  if (!order.length) {
+    return buildDefaultProfileStore();
+  }
+
+  const preferredActiveId = slugifyProfileId(source.activeId || localStorage.getItem(ACTIVE_PROFILE_KEY) || order[0]);
+  return {
+    version: 1,
+    activeId: items[preferredActiveId] ? preferredActiveId : order[0],
+    order,
+    items
+  };
+}
+
+function loadProfileStore() {
+  try {
+    const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (!raw) return buildDefaultProfileStore();
+    return normalizeProfileStore(JSON.parse(raw));
+  } catch (error) {
+    return buildDefaultProfileStore();
+  }
+}
+
+function saveProfileStore(store) {
+  const normalized = normalizeProfileStore(store);
+  profileStore = normalized;
+  localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(normalized));
+  localStorage.setItem(ACTIVE_PROFILE_KEY, normalized.activeId);
+  return normalized;
+}
+
+function getProfileIdFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    return slugifyProfileId(url.searchParams.get(PROFILE_QUERY_KEY));
+  } catch (error) {
+    return "";
+  }
+}
+
+function getProfileRecord(profileId = activeProfileId) {
+  const normalizedId = slugifyProfileId(profileId);
+  if (!normalizedId) return null;
+  return profileStore?.items?.[normalizedId] || null;
+}
+
+function resolveInitialProfileId() {
+  const fromUrl = getProfileIdFromUrl();
+  if (fromUrl) return fromUrl;
+  const fromStorage = slugifyProfileId(localStorage.getItem(ACTIVE_PROFILE_KEY));
+  if (fromStorage && profileStore?.items?.[fromStorage]) return fromStorage;
+  return profileStore?.activeId || DEFAULT_PROFILE_ID;
+}
+
+function ensureProfileRecord(profileId, data = siteData, name = "") {
+  const normalizedId = slugifyProfileId(profileId) || DEFAULT_PROFILE_ID;
+  if (!profileStore) {
+    profileStore = buildDefaultProfileStore(data || DEFAULT_DATA);
+  }
+  if (!profileStore.items[normalizedId]) {
+    profileStore.items[normalizedId] = createProfileRecord(
+      normalizedId,
+      name || formatProfileLabel(normalizedId),
+      data || DEFAULT_DATA
+    );
+    if (!profileStore.order.includes(normalizedId)) {
+      profileStore.order.push(normalizedId);
+    }
+  }
+  if (!profileStore.activeId || !profileStore.items[profileStore.activeId]) {
+    profileStore.activeId = normalizedId;
+  }
+  return profileStore.items[normalizedId];
+}
+
+function persistCurrentProfile(data = siteData) {
+  const currentData = normalizeData(data);
+  const currentName = cleanText(adminInputs.profileName?.value, getProfileRecord()?.name || formatProfileLabel(activeProfileId));
+  const record = ensureProfileRecord(activeProfileId, currentData, currentName);
+  record.name = currentName;
+  record.updatedAt = new Date().toISOString();
+  record.data = currentData;
+  profileStore.activeId = record.id;
+  saveProfileStore(profileStore);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(currentData));
+  return record;
+}
+
+function buildUniqueProfileId(name) {
+  const baseId = slugifyProfileId(name) || `profile-${Date.now().toString(36)}`;
+  let candidate = baseId;
+  let counter = 2;
+  while (profileStore?.items?.[candidate]) {
+    candidate = `${baseId}-${counter}`;
+    counter += 1;
+  }
+  return candidate;
 }
 
 function getBasePageDirectoryPath() {
@@ -718,6 +903,8 @@ function getSnapshotTokenFromUrl() {
 }
 
 function loadInitialSiteData() {
+  profileStore = loadProfileStore();
+  activeProfileId = resolveInitialProfileId();
   const snapshotToken = getSnapshotTokenFromUrl();
   if (snapshotToken) {
     const decoded = decodeSnapshotToken(snapshotToken);
@@ -804,16 +991,13 @@ function normalizeData(raw) {
 }
 
 function loadData() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : clone(DEFAULT_DATA);
-  } catch (error) {
-    return clone(DEFAULT_DATA);
-  }
+  const profileData = getProfileRecord(activeProfileId)?.data;
+  if (profileData) return normalizeData(profileData);
+  return normalizeData(loadLegacyData());
 }
 
 function saveData(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  persistCurrentProfile(data);
 }
 
 function buildHearts() {
@@ -1594,22 +1778,43 @@ function getBasePageUrl() {
   return `${window.location.origin}${window.location.pathname}`;
 }
 
+function buildPageUrl({ admin = false, profileId = activeProfileId, snapshotToken = "" } = {}) {
+  const url = new URL(getBasePageUrl());
+  const normalizedProfileId = slugifyProfileId(profileId);
+  if (normalizedProfileId) {
+    url.searchParams.set(PROFILE_QUERY_KEY, normalizedProfileId);
+  }
+  if (admin) {
+    url.searchParams.set("admin", "1");
+  }
+  if (snapshotToken) {
+    url.searchParams.set("s", snapshotToken);
+  }
+  return url.toString();
+}
+
+function syncProfileUrl({ admin = isAdmin, snapshotToken = "" } = {}) {
+  const nextUrl = buildPageUrl({ admin, snapshotToken });
+  window.history.replaceState({}, "", nextUrl);
+}
+
 function getShareLinks(data = siteData) {
-  const base = getBasePageUrl();
   const snapshotToken = encodeSnapshotToken(data);
-  const publicLink = snapshotToken ? `${base}?s=${snapshotToken}` : base;
+  const publicLink = buildPageUrl({ admin: false, snapshotToken });
   return {
     publicLink,
-    adminLink: `${base}?admin=1`,
+    adminLink: buildPageUrl({ admin: true }),
     snapshotToken
   };
 }
 
 function getQrImageUrls(targetUrl) {
   const encoded = encodeURIComponent(targetUrl);
+  const cacheBust = Date.now();
   return [
-    `${QR_IMAGE_ENDPOINT}?size=1400x1400&format=png&margin=36&ecc=H&color=${QR_PINK_DARK}&bgcolor=${QR_PINK_LIGHT}&data=${encoded}`,
-    `https://quickchart.io/qr?size=1400&format=png&margin=4&ecLevel=H&dark=cf1f5e&light=fff6fa&text=${encoded}`
+    `${QR_IMAGE_ENDPOINT}?size=1400x1400&format=png&margin=36&ecc=H&color=${QR_PINK_DARK}&bgcolor=${QR_PINK_LIGHT}&data=${encoded}&cb=${cacheBust}`,
+    `https://quickchart.io/qr?size=1400&format=png&margin=4&ecLevel=H&dark=cf1f5e&light=fff6fa&text=${encoded}&cb=${cacheBust}`,
+    `https://chart.googleapis.com/chart?chs=1400x1400&cht=qr&choe=UTF-8&chl=${encoded}&chld=H|2&cb=${cacheBust}`
   ];
 }
 
@@ -2161,6 +2366,112 @@ function setQrPreview(targetUrl) {
   tryLoad();
 }
 
+function refreshProfileControls() {
+  if (adminInputs.profileId) {
+    adminInputs.profileId.value = activeProfileId;
+  }
+  if (adminInputs.profileName) {
+    adminInputs.profileName.value = getProfileRecord(activeProfileId)?.name || formatProfileLabel(activeProfileId);
+  }
+  if (!els.adminProfileSelect) return;
+
+  els.adminProfileSelect.innerHTML = "";
+  (profileStore?.order || []).forEach((profileId) => {
+    const record = profileStore.items[profileId];
+    if (!record) return;
+    const option = document.createElement("option");
+    option.value = record.id;
+    option.textContent = `${record.name} (${record.id})`;
+    if (record.id === activeProfileId) option.selected = true;
+    els.adminProfileSelect.appendChild(option);
+  });
+}
+
+function switchProfile(profileId) {
+  const normalizedId = slugifyProfileId(profileId);
+  if (!normalizedId) return;
+  const record = ensureProfileRecord(normalizedId, loadLegacyData(), formatProfileLabel(normalizedId));
+  activeProfileId = record.id;
+  profileStore.activeId = record.id;
+  saveProfileStore(profileStore);
+  siteData = normalizeData(record.data);
+  applyData(siteData);
+  fillAdminForm(siteData);
+  refreshProfileControls();
+  refreshShareLinks(true);
+  syncProfileUrl({ admin: true });
+  setAdminStatus(`Profile switched: ${record.name}`);
+}
+
+function createNewProfile() {
+  const enteredName = window.prompt("New profile name:");
+  const profileName = cleanText(enteredName);
+  if (!profileName) return;
+  const profileId = buildUniqueProfileId(profileName);
+  profileStore.items[profileId] = createProfileRecord(profileId, profileName, siteData);
+  profileStore.order.push(profileId);
+  profileStore.activeId = profileId;
+  saveProfileStore(profileStore);
+  activeProfileId = profileId;
+  siteData = normalizeData(profileStore.items[profileId].data);
+  applyData(siteData);
+  fillAdminForm(siteData);
+  refreshProfileControls();
+  refreshShareLinks(true);
+  syncProfileUrl({ admin: true });
+  setAdminStatus(`New profile created: ${profileName}`);
+}
+
+function deleteCurrentProfile() {
+  if (!profileStore || !profileStore.order.length) return;
+  if (profileStore.order.length === 1) {
+    setAdminStatus("Keep at least one profile. Reset it instead.", true);
+    return;
+  }
+  const record = getProfileRecord(activeProfileId);
+  const ok = window.confirm(`Delete profile "${record?.name || activeProfileId}"?`);
+  if (!ok) return;
+
+  delete profileStore.items[activeProfileId];
+  profileStore.order = profileStore.order.filter((profileId) => profileId !== activeProfileId);
+  profileStore.activeId = profileStore.order[0] || DEFAULT_PROFILE_ID;
+  saveProfileStore(profileStore);
+  switchProfile(profileStore.activeId);
+  setAdminStatus("Profile deleted.");
+}
+
+function setupProfileTools() {
+  if (!isAdmin) return;
+  refreshProfileControls();
+
+  if (els.adminProfileSelect) {
+    els.adminProfileSelect.addEventListener("change", (event) => {
+      const nextProfileId = event.target.value;
+      if (!nextProfileId || nextProfileId === activeProfileId) return;
+      switchProfile(nextProfileId);
+    });
+  }
+
+  if (adminInputs.profileName) {
+    adminInputs.profileName.addEventListener("change", () => {
+      const record = ensureProfileRecord(activeProfileId, siteData);
+      record.name = cleanText(adminInputs.profileName.value, record.name);
+      record.updatedAt = new Date().toISOString();
+      saveProfileStore(profileStore);
+      refreshProfileControls();
+      setAdminStatus("Profile name updated.");
+    });
+  }
+
+  if (els.adminProfileNewBtn) {
+    els.adminProfileNewBtn.addEventListener("click", createNewProfile);
+  }
+
+  if (els.adminProfileDeleteBtn) {
+    els.adminProfileDeleteBtn.addEventListener("click", deleteCurrentProfile);
+  }
+}
+
 function fillShareFields() {
   currentShareLinks = getShareLinks(siteData);
   if (els.adminPublicLink) els.adminPublicLink.value = currentShareLinks.publicLink;
@@ -2247,6 +2558,7 @@ function fillAdminForm(data) {
     if (!isPlaceholderSongTitle(item.song) && !isPlaceholderArtistName(item.artist)) return;
     scheduleSongMetadataAutofill(index);
   });
+  refreshProfileControls();
 }
 
 function collectAdminFormData() {
@@ -2290,9 +2602,8 @@ function collectAdminFormData() {
 }
 
 function cleanAdminQuery() {
-  const url = new URL(window.location.href);
-  url.searchParams.delete("admin");
-  window.location.href = `${url.pathname}${url.search}${url.hash}`;
+  const snapshotToken = currentShareLinks?.snapshotToken || getSnapshotTokenFromUrl();
+  window.location.href = buildPageUrl({ admin: false, snapshotToken });
 }
 
 function checkAdminAccess() {
@@ -2321,19 +2632,25 @@ function setupAdminPanel() {
   document.body.classList.add("admin-mode");
   els.adminPanel.hidden = false;
   if (els.adminBadge) els.adminBadge.hidden = false;
+  ensureProfileRecord(activeProfileId, siteData, formatProfileLabel(activeProfileId));
+  saveProfileStore(profileStore);
   fillAdminForm(siteData);
   setupAdminListEditors();
+  setupProfileTools();
   setupShareTools();
-  setAdminStatus("Admin mode is active.");
+  syncProfileUrl({ admin: true });
+  setAdminStatus(`Admin mode is active. Current profile: ${getProfileRecord(activeProfileId)?.name || activeProfileId}`);
 
   if (els.adminSaveBtn) {
     els.adminSaveBtn.addEventListener("click", () => {
       siteData = collectAdminFormData();
       applyData(siteData);
       saveData(siteData);
+      refreshProfileControls();
       refreshShareLinks(true);
+      syncProfileUrl({ admin: true });
       setLetterOpenState(false);
-      setAdminStatus("Saved. New public snapshot link is ready.");
+      setAdminStatus("Saved. Profile updated and new public snapshot link is ready.");
     });
   }
 
@@ -2342,12 +2659,13 @@ function setupAdminPanel() {
       const ok = window.confirm("Reset all content to default?");
       if (!ok) return;
       siteData = clone(DEFAULT_DATA);
-      localStorage.removeItem(STORAGE_KEY);
+      saveData(siteData);
       applyData(siteData);
       fillAdminForm(siteData);
       refreshShareLinks(true);
+      syncProfileUrl({ admin: true });
       setLetterOpenState(false);
-      setAdminStatus("Reset complete.");
+      setAdminStatus("Current profile reset to default.");
     });
   }
 

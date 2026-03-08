@@ -131,7 +131,7 @@
 
     <aside id="adminPanel" class="admin-panel" hidden>
       <h2>Admin Edit</h2>
-      <p class="admin-note">Only people with admin link + passcode can edit. Public link is a frozen snapshot.</p>
+      <p class="admin-note">Only people with admin link + passcode can edit. Each profile keeps its own admin link, and public links are frozen snapshots.</p>
 
       <div class="admin-group">
         <h3>Theme</h3>
@@ -196,6 +196,26 @@
       </div>
 
       <div class="admin-group">
+        <h3>Profiles</h3>
+        <label class="admin-field">
+          <span>Current profile name</span>
+          <input id="adminProfileName" type="text" />
+        </label>
+        <label class="admin-field">
+          <span>Current profile ID</span>
+          <input id="adminProfileId" type="text" readonly />
+        </label>
+        <label class="admin-field">
+          <span>Saved profiles</span>
+          <select id="adminProfileSelect"></select>
+        </label>
+        <div class="admin-inline-actions">
+          <button id="adminProfileNewBtn" class="admin-btn" type="button">New Profile</button>
+          <button id="adminProfileDeleteBtn" class="admin-btn" type="button">Delete Profile</button>
+        </div>
+      </div>
+
+      <div class="admin-group">
         <h3>Share & QR</h3>
         <label class="admin-field"><span>Public link</span><input id="adminPublicLink" type="text" readonly /></label>
         <label class="admin-field"><span>Admin link</span><input id="adminAdminLink" type="text" readonly /></label>
@@ -215,7 +235,7 @@
           <a id="downloadQrBtn" class="admin-btn" href="#" download="bby-qr.png" hidden>Download QR</a>
         </div>
         <div class="admin-qr-preview-wrap">
-          <img id="adminQrPreview" class="admin-qr-preview" alt="QR preview" hidden />
+          <img id="adminQrPreview" class="admin-qr-preview" alt="QR preview" hidden decoding="sync" referrerpolicy="no-referrer" />
         </div>
       </div>
 
