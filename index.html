@@ -11,6 +11,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/easyqrcodejs@4.4.12/dist/easy.qrcode.min.js"></script>
   </head>
   <body>
     <div class="heart-layer" aria-hidden="true"></div>
@@ -235,7 +236,7 @@
           <a id="downloadQrBtn" class="admin-btn" href="#" download="bby-qr.png" hidden>Download QR</a>
         </div>
         <div class="admin-qr-preview-wrap">
-          <img id="adminQrPreview" class="admin-qr-preview" alt="QR preview" hidden decoding="sync" referrerpolicy="no-referrer" />
+          <div id="adminQrPreview" class="admin-qr-preview" hidden aria-label="QR preview"></div>
         </div>
       </div>
 

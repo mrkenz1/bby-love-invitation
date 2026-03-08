@@ -1022,6 +1022,14 @@ body {
   image-rendering: pixelated;
 }
 
+.admin-qr-preview canvas,
+.admin-qr-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 18px;
+}
+
 .admin-actions {
   position: sticky;
   bottom: -1px;

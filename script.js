@@ -189,6 +189,7 @@ let songWaveAudioData = null;
 let songWaveAudioSource = null;
 let repeatCurrentSong = false;
 let currentQrPreviewUrl = "";
+let currentQrRenderVersion = 0;
 let profileStore = null;
 let activeProfileId = DEFAULT_PROFILE_ID;
 const isAdmin = checkAdminAccess();
@@ -1856,6 +1857,140 @@ function getQrImageUrls(targetUrl) {
   ];
 }
 
+function getQrDownloadFileName() {
+  return els.adminQrTarget?.value === "admin" ? "bby-admin-qr.png" : "bby-public-qr.png";
+}
+
+function resetQrPreview() {
+  if (els.adminQrPreview) {
+    els.adminQrPreview.innerHTML = "";
+    els.adminQrPreview.hidden = true;
+  }
+  if (els.downloadQrBtn) {
+    els.downloadQrBtn.hidden = true;
+    els.downloadQrBtn.removeAttribute("href");
+  }
+  currentQrPreviewUrl = "";
+}
+
+function getQrCorrectLevel(targetUrl) {
+  const textLength = cleanText(targetUrl).length;
+  if (typeof QRCode !== "function" || !QRCode.CorrectLevel) return undefined;
+  if (textLength > 2000) return QRCode.CorrectLevel.L;
+  if (textLength > 1200) return QRCode.CorrectLevel.M;
+  if (textLength > 700) return QRCode.CorrectLevel.Q;
+  return QRCode.CorrectLevel.H;
+}
+
+function syncQrDownloadFromPreview(preferredUrl = "") {
+  if (!els.adminQrPreview || !els.downloadQrBtn) return false;
+
+  let sourceUrl = cleanText(preferredUrl);
+  if (!sourceUrl) {
+    const canvas = els.adminQrPreview.querySelector("canvas");
+    const image = els.adminQrPreview.querySelector("img");
+    if (canvas instanceof HTMLCanvasElement) {
+      sourceUrl = canvas.toDataURL("image/png");
+    } else if (image instanceof HTMLImageElement) {
+      sourceUrl = cleanText(image.currentSrc || image.src);
+    }
+  }
+
+  if (!sourceUrl) return false;
+  currentQrPreviewUrl = sourceUrl;
+  els.downloadQrBtn.hidden = false;
+  els.downloadQrBtn.href = sourceUrl;
+  els.downloadQrBtn.download = getQrDownloadFileName();
+  return true;
+}
+
+function renderFallbackQrImage(targetUrl, renderVersion) {
+  if (!els.adminQrPreview) return;
+  const qrUrls = getQrImageUrls(targetUrl);
+  let attemptIndex = 0;
+
+  const tryLoad = () => {
+    const qrUrl = qrUrls[attemptIndex];
+    if (!qrUrl || renderVersion !== currentQrRenderVersion) {
+      resetQrPreview();
+      setAdminStatus("QR could not be generated. Save first, then try again.", true);
+      return;
+    }
+
+    const image = document.createElement("img");
+    image.alt = "QR code preview";
+    image.decoding = "sync";
+    image.referrerPolicy = "no-referrer";
+    image.addEventListener("load", () => {
+      if (renderVersion !== currentQrRenderVersion) return;
+      els.adminQrPreview.innerHTML = "";
+      els.adminQrPreview.appendChild(image);
+      els.adminQrPreview.hidden = false;
+      syncQrDownloadFromPreview(qrUrl);
+      setAdminStatus("QR ready.");
+    });
+    image.addEventListener("error", () => {
+      attemptIndex += 1;
+      tryLoad();
+    });
+    image.src = qrUrl;
+  };
+
+  tryLoad();
+}
+
+function renderCanvasQr(targetUrl, renderVersion) {
+  if (!els.adminQrPreview || typeof QRCode !== "function") {
+    throw new Error("QRCode library is not ready.");
+  }
+
+  els.adminQrPreview.innerHTML = "";
+  els.adminQrPreview.hidden = false;
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const finish = (handler, value) => {
+      if (settled || renderVersion !== currentQrRenderVersion) return;
+      settled = true;
+      handler(value);
+    };
+
+    try {
+      new QRCode(els.adminQrPreview, {
+        text: targetUrl,
+        width: 960,
+        height: 960,
+        colorDark: "#cf1f5e",
+        colorLight: "#fff6fa",
+        quietZone: 18,
+        quietZoneColor: "#fff6fa",
+        correctLevel: getQrCorrectLevel(targetUrl),
+        onRenderingEnd: (qrCodeOptions, dataUrl) => {
+          if (!syncQrDownloadFromPreview(dataUrl)) {
+            finish(reject, new Error("QR rendered but preview could not be prepared."));
+            return;
+          }
+          setAdminStatus("QR ready.");
+          finish(resolve);
+        }
+      });
+    } catch (error) {
+      finish(reject, error);
+      return;
+    }
+
+    window.setTimeout(() => {
+      if (syncQrDownloadFromPreview()) {
+        setAdminStatus("QR ready.");
+        finish(resolve);
+        return;
+      }
+      finish(reject, new Error("QR rendering timed out."));
+    }, 1400);
+  });
+}
+
 function resetIframe(iframe) {
   if (!iframe) return;
   iframe.style.display = "none";
@@ -2359,49 +2494,20 @@ function setQrPreview(targetUrl) {
   if (!els.adminQrPreview || !els.downloadQrBtn) return;
   const safeTargetUrl = cleanText(targetUrl);
   if (!safeTargetUrl) {
-    els.adminQrPreview.hidden = true;
-    els.downloadQrBtn.hidden = true;
-    currentQrPreviewUrl = "";
+    resetQrPreview();
     setAdminStatus("Save first, then generate QR.", true);
     return;
   }
-  const qrUrls = getQrImageUrls(targetUrl);
-  let attemptIndex = 0;
-
-  const tryLoad = () => {
-    const qrUrl = qrUrls[attemptIndex];
-    if (!qrUrl) {
-      els.adminQrPreview.hidden = true;
-      els.adminQrPreview.removeAttribute("src");
-      els.downloadQrBtn.hidden = true;
-      els.downloadQrBtn.removeAttribute("href");
-      currentQrPreviewUrl = "";
-      setAdminStatus("QR could not be generated. Try Save first, then Generate QR again.", true);
-      return;
-    }
-
-    els.adminQrPreview.hidden = false;
-    els.adminQrPreview.src = qrUrl;
-  };
-
-  els.adminQrPreview.onload = () => {
-    currentQrPreviewUrl = els.adminQrPreview.currentSrc || els.adminQrPreview.src;
-    els.downloadQrBtn.hidden = false;
-    els.downloadQrBtn.href = currentQrPreviewUrl;
-    els.downloadQrBtn.download = els.adminQrTarget?.value === "admin" ? "bby-admin-qr.png" : "bby-public-qr.png";
-    setAdminStatus("QR ready. Scan the center square for the best results.");
-  };
-
-  els.adminQrPreview.onerror = () => {
-    attemptIndex += 1;
-    tryLoad();
-  };
-
-  els.downloadQrBtn.hidden = true;
-  els.downloadQrBtn.removeAttribute("href");
+  currentQrRenderVersion += 1;
+  const renderVersion = currentQrRenderVersion;
+  resetQrPreview();
   els.adminQrPreview.hidden = false;
-  currentQrPreviewUrl = "";
-  tryLoad();
+  setAdminStatus("Generating QR...");
+
+  renderCanvasQr(safeTargetUrl, renderVersion).catch(() => {
+    if (renderVersion !== currentQrRenderVersion) return;
+    renderFallbackQrImage(safeTargetUrl, renderVersion);
+  });
 }
 
 function refreshProfileControls() {
@@ -2559,7 +2665,6 @@ function setupShareTools() {
       const latest = currentShareLinks || refreshShareLinks();
       const target = els.adminQrTarget?.value === "admin" ? latest.adminLink : latest.publicLink;
       setQrPreview(target);
-      setAdminStatus("QR updated.");
     });
   }
 }
