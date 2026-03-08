@@ -3,6 +3,8 @@ const ADMIN_SESSION_KEY = "bby_admin_v1";
 const ADMIN_PASSCODE = "bby2026";
 const HEART_COUNT = 24;
 const QR_IMAGE_ENDPOINT = "https://api.qrserver.com/v1/create-qr-code/";
+const QR_PINK_DARK = "214-33-94";
+const QR_PINK_LIGHT = "255-246-250";
 const IMAGE_MEDIA_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "gif", "avif"];
 const VIDEO_MEDIA_EXTENSIONS = ["mp4", "webm", "ogg", "mov", "m4v"];
 
@@ -178,8 +180,12 @@ let songWaveAudioSource = null;
 let repeatCurrentSong = false;
 let currentQrPreviewUrl = "";
 const isAdmin = checkAdminAccess();
+const LZ_URI_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-$";
+const LZ_URI_LOOKUP = Object.create(null);
 
-siteData = loadInitialSiteData();
+for (let i = 0; i < LZ_URI_ALPHABET.length; i += 1) {
+  LZ_URI_LOOKUP[LZ_URI_ALPHABET.charAt(i)] = i;
+}
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -283,6 +289,260 @@ function fromBase64UrlToUtf8(token) {
   return new TextDecoder().decode(bytes);
 }
 
+function lzGetBaseValue(alphabet, character) {
+  if (alphabet === LZ_URI_ALPHABET) {
+    return LZ_URI_LOOKUP[character];
+  }
+  return alphabet.indexOf(character);
+}
+
+function lzCompress(input, bitsPerChar, getCharFromInt) {
+  if (input == null) return "";
+
+  let value;
+  const contextDictionary = Object.create(null);
+  const contextDictionaryToCreate = Object.create(null);
+  let contextC = "";
+  let contextW = "";
+  let contextWC = "";
+  let contextEnlargeIn = 2;
+  let contextDictSize = 3;
+  let contextNumBits = 2;
+  const contextData = [];
+  let contextDataVal = 0;
+  let contextDataPosition = 0;
+
+  const writeBit = (bit) => {
+    contextDataVal = (contextDataVal << 1) | bit;
+    if (contextDataPosition === bitsPerChar - 1) {
+      contextDataPosition = 0;
+      contextData.push(getCharFromInt(contextDataVal));
+      contextDataVal = 0;
+    } else {
+      contextDataPosition += 1;
+    }
+  };
+
+  const writeValue = (numBits, valueToWrite) => {
+    for (let i = 0; i < numBits; i += 1) {
+      writeBit(valueToWrite & 1);
+      valueToWrite >>= 1;
+    }
+  };
+
+  for (let ii = 0; ii < input.length; ii += 1) {
+    contextC = input.charAt(ii);
+    if (!Object.prototype.hasOwnProperty.call(contextDictionary, contextC)) {
+      contextDictionary[contextC] = contextDictSize;
+      contextDictSize += 1;
+      contextDictionaryToCreate[contextC] = true;
+    }
+
+    contextWC = contextW + contextC;
+    if (Object.prototype.hasOwnProperty.call(contextDictionary, contextWC)) {
+      contextW = contextWC;
+    } else {
+      if (Object.prototype.hasOwnProperty.call(contextDictionaryToCreate, contextW)) {
+        if (contextW.charCodeAt(0) < 256) {
+          writeValue(contextNumBits, 0);
+          writeValue(8, contextW.charCodeAt(0));
+        } else {
+          writeValue(contextNumBits, 1);
+          writeValue(16, contextW.charCodeAt(0));
+        }
+        contextEnlargeIn -= 1;
+        if (contextEnlargeIn === 0) {
+          contextEnlargeIn = 2 ** contextNumBits;
+          contextNumBits += 1;
+        }
+        delete contextDictionaryToCreate[contextW];
+      } else {
+        value = contextDictionary[contextW];
+        writeValue(contextNumBits, value);
+      }
+
+      contextEnlargeIn -= 1;
+      if (contextEnlargeIn === 0) {
+        contextEnlargeIn = 2 ** contextNumBits;
+        contextNumBits += 1;
+      }
+
+      contextDictionary[contextWC] = contextDictSize;
+      contextDictSize += 1;
+      contextW = String(contextC);
+    }
+  }
+
+  if (contextW !== "") {
+    if (Object.prototype.hasOwnProperty.call(contextDictionaryToCreate, contextW)) {
+      if (contextW.charCodeAt(0) < 256) {
+        writeValue(contextNumBits, 0);
+        writeValue(8, contextW.charCodeAt(0));
+      } else {
+        writeValue(contextNumBits, 1);
+        writeValue(16, contextW.charCodeAt(0));
+      }
+      contextEnlargeIn -= 1;
+      if (contextEnlargeIn === 0) {
+        contextEnlargeIn = 2 ** contextNumBits;
+        contextNumBits += 1;
+      }
+      delete contextDictionaryToCreate[contextW];
+    } else {
+      value = contextDictionary[contextW];
+      writeValue(contextNumBits, value);
+    }
+
+    contextEnlargeIn -= 1;
+    if (contextEnlargeIn === 0) {
+      contextEnlargeIn = 2 ** contextNumBits;
+      contextNumBits += 1;
+    }
+  }
+
+  writeValue(contextNumBits, 2);
+
+  while (true) {
+    contextDataVal <<= 1;
+    if (contextDataPosition === bitsPerChar - 1) {
+      contextData.push(getCharFromInt(contextDataVal));
+      break;
+    } else {
+      contextDataPosition += 1;
+    }
+  }
+
+  return contextData.join("");
+}
+
+function lzDecompress(length, resetValue, getNextValue) {
+  const dictionary = [];
+  let next;
+  let enlargeIn = 4;
+  let dictSize = 4;
+  let numBits = 3;
+  let entry = "";
+  const result = [];
+  let i;
+  let w;
+  let bits;
+  let resb;
+  let maxpower;
+  let power;
+  let c;
+  const data = {
+    val: getNextValue(0),
+    position: resetValue,
+    index: 1
+  };
+
+  const readBits = (bitCount) => {
+    let localBits = 0;
+    let localMaxPower = 2 ** bitCount;
+    let localPower = 1;
+    while (localPower !== localMaxPower) {
+      resb = data.val & data.position;
+      data.position >>= 1;
+      if (data.position === 0) {
+        data.position = resetValue;
+        data.val = getNextValue(data.index);
+        data.index += 1;
+      }
+      localBits |= (resb > 0 ? 1 : 0) * localPower;
+      localPower <<= 1;
+    }
+    return localBits;
+  };
+
+  for (i = 0; i < 3; i += 1) {
+    dictionary[i] = i;
+  }
+
+  bits = readBits(2);
+
+  switch (bits) {
+    case 0:
+      c = String.fromCharCode(readBits(8));
+      break;
+    case 1:
+      c = String.fromCharCode(readBits(16));
+      break;
+    case 2:
+      return "";
+    default:
+      c = "";
+      break;
+  }
+
+  dictionary[3] = c;
+  w = c;
+  result.push(c);
+
+  while (true) {
+    if (data.index > length) {
+      return "";
+    }
+
+    bits = readBits(numBits);
+
+    switch (bits) {
+      case 0:
+        dictionary[dictSize] = String.fromCharCode(readBits(8));
+        dictSize += 1;
+        bits = dictSize - 1;
+        enlargeIn -= 1;
+        break;
+      case 1:
+        dictionary[dictSize] = String.fromCharCode(readBits(16));
+        dictSize += 1;
+        bits = dictSize - 1;
+        enlargeIn -= 1;
+        break;
+      case 2:
+        return result.join("");
+      default:
+        break;
+    }
+
+    if (enlargeIn === 0) {
+      enlargeIn = 2 ** numBits;
+      numBits += 1;
+    }
+
+    if (dictionary[bits]) {
+      entry = dictionary[bits];
+    } else if (bits === dictSize) {
+      entry = w + w.charAt(0);
+    } else {
+      return "";
+    }
+    result.push(entry);
+
+    dictionary[dictSize] = w + entry.charAt(0);
+    dictSize += 1;
+    enlargeIn -= 1;
+
+    w = entry;
+
+    if (enlargeIn === 0) {
+      enlargeIn = 2 ** numBits;
+      numBits += 1;
+    }
+  }
+}
+
+function compressToEncodedURIComponent(input) {
+  if (input == null) return "";
+  return lzCompress(input, 6, (value) => LZ_URI_ALPHABET.charAt(value));
+}
+
+function decompressFromEncodedURIComponent(input) {
+  if (input == null) return "";
+  if (input === "") return null;
+  const normalized = input.replace(/ /g, "+");
+  return lzDecompress(normalized.length, 32, (index) => lzGetBaseValue(LZ_URI_ALPHABET, normalized.charAt(index)));
+}
+
 function compactVideoItems(items) {
   return (items || []).map((item) => [
     cleanText(item?.title),
@@ -344,6 +604,34 @@ function compactDataForShare(data) {
   };
 }
 
+function createShareDiff(current, base) {
+  if (Array.isArray(current) || Array.isArray(base)) {
+    return JSON.stringify(current) === JSON.stringify(base) ? undefined : current;
+  }
+
+  if (current && typeof current === "object" && base && typeof base === "object") {
+    const diff = {};
+    Object.keys(current).forEach((key) => {
+      const next = createShareDiff(current[key], base[key]);
+      if (next !== undefined) diff[key] = next;
+    });
+    return Object.keys(diff).length ? diff : undefined;
+  }
+
+  return current === base ? undefined : current;
+}
+
+function mergeShareDiff(base, diff) {
+  if (diff === undefined) return clone(base);
+  if (Array.isArray(diff) || Array.isArray(base)) return clone(diff);
+  if (!(base && typeof base === "object")) return diff;
+  const merged = clone(base);
+  Object.keys(diff || {}).forEach((key) => {
+    merged[key] = mergeShareDiff(base[key], diff[key]);
+  });
+  return merged;
+}
+
 function expandCompactSharedData(payload) {
   if (!payload || typeof payload !== "object" || payload.v !== 2) return null;
 
@@ -384,9 +672,17 @@ function expandCompactSharedData(payload) {
   };
 }
 
+const DEFAULT_COMPACT_SHARE_DATA = compactDataForShare(DEFAULT_DATA);
+
 function encodeSnapshotToken(data) {
   try {
-    return toBase64UrlFromUtf8(JSON.stringify(compactDataForShare(data)));
+    const compact = compactDataForShare(data);
+    const diff = createShareDiff(compact, DEFAULT_COMPACT_SHARE_DATA) || {};
+    const compressed = compressToEncodedURIComponent(JSON.stringify({ v: 3, d: diff }));
+    const compressedToken = compressed ? `lz:${compressed}` : "";
+    const base64Token = toBase64UrlFromUtf8(JSON.stringify(compact));
+    if (!compressedToken) return base64Token;
+    return compressedToken.length < base64Token.length ? compressedToken : base64Token;
   } catch (error) {
     return "";
   }
@@ -394,6 +690,16 @@ function encodeSnapshotToken(data) {
 
 function decodeSnapshotToken(token) {
   try {
+    if (token.startsWith("lz:")) {
+      const decompressed = decompressFromEncodedURIComponent(token.slice(3));
+      if (!decompressed) return null;
+      const parsedCompressed = JSON.parse(decompressed);
+      if (parsedCompressed?.v === 3) {
+        const expanded = mergeShareDiff(DEFAULT_COMPACT_SHARE_DATA, parsedCompressed.d || {});
+        return expandCompactSharedData(expanded) || expanded;
+      }
+      return parsedCompressed;
+    }
     const json = fromBase64UrlToUtf8(token);
     const parsed = JSON.parse(json);
     return expandCompactSharedData(parsed) || parsed;
@@ -1302,8 +1608,8 @@ function getShareLinks(data = siteData) {
 function getQrImageUrls(targetUrl) {
   const encoded = encodeURIComponent(targetUrl);
   return [
-    `${QR_IMAGE_ENDPOINT}?size=1200x1200&format=png&margin=20&data=${encoded}`,
-    `https://quickchart.io/qr?size=1200&format=png&margin=2&text=${encoded}`
+    `${QR_IMAGE_ENDPOINT}?size=1400x1400&format=png&margin=36&ecc=H&color=${QR_PINK_DARK}&bgcolor=${QR_PINK_LIGHT}&data=${encoded}`,
+    `https://quickchart.io/qr?size=1400&format=png&margin=4&ecLevel=H&dark=cf1f5e&light=fff6fa&text=${encoded}`
   ];
 }
 
@@ -1808,6 +2114,14 @@ function setAdminStatus(text, isError = false) {
 
 function setQrPreview(targetUrl) {
   if (!els.adminQrPreview || !els.downloadQrBtn) return;
+  const safeTargetUrl = cleanText(targetUrl);
+  if (!safeTargetUrl) {
+    els.adminQrPreview.hidden = true;
+    els.downloadQrBtn.hidden = true;
+    currentQrPreviewUrl = "";
+    setAdminStatus("Save first, then generate QR.", true);
+    return;
+  }
   const qrUrls = getQrImageUrls(targetUrl);
   let attemptIndex = 0;
 
@@ -1832,6 +2146,7 @@ function setQrPreview(targetUrl) {
     els.downloadQrBtn.hidden = false;
     els.downloadQrBtn.href = currentQrPreviewUrl;
     els.downloadQrBtn.download = els.adminQrTarget?.value === "admin" ? "bby-admin-qr.png" : "bby-public-qr.png";
+    setAdminStatus("QR ready. Scan the center square for the best results.");
   };
 
   els.adminQrPreview.onerror = () => {
@@ -2174,6 +2489,7 @@ function setupEvents() {
 buildHearts();
 buildSongWaveBars();
 startSongWaveAnimation();
+siteData = loadInitialSiteData();
 applyData(siteData);
 setupEvents();
 setupAdminPanel();

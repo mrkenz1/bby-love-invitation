@@ -969,23 +969,57 @@ body {
 }
 
 .admin-qr-preview-wrap {
+  position: relative;
   margin-top: 0.4rem;
   border: 1px dashed #e5c7d7;
-  border-radius: 12px;
-  background: #fff7fb;
-  min-height: 160px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(255, 255, 255, 0.55), transparent 18%),
+    radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.35), transparent 16%),
+    linear-gradient(180deg, #ffe8f2, #ffd9ea);
+  min-height: 280px;
   display: grid;
   place-items: center;
-  padding: 0.85rem;
+  padding: 1.1rem;
+  overflow: hidden;
+}
+
+.admin-qr-preview-wrap::before {
+  content: "";
+  position: absolute;
+  inset: auto;
+  width: 132px;
+  height: 132px;
+  left: 50%;
+  top: 46%;
+  border-radius: 28px;
+  background: rgba(238, 61, 126, 0.1);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.admin-qr-preview-wrap::after {
+  content: "";
+  position: absolute;
+  width: 132px;
+  height: 132px;
+  left: calc(50% - 66px);
+  top: calc(46% - 66px);
+  border-radius: 50%;
+  background: rgba(238, 61, 126, 0.1);
+  box-shadow: 92px 0 0 rgba(238, 61, 126, 0.1);
 }
 
 .admin-qr-preview {
-  width: min(280px, 100%);
+  position: relative;
+  z-index: 1;
+  width: min(300px, 100%);
   height: auto;
-  border-radius: 14px;
+  border-radius: 28px;
   background: #fff;
-  padding: 0.6rem;
-  box-shadow: 0 12px 28px rgba(90, 50, 70, 0.12);
+  padding: 0.95rem;
+  border: 8px solid rgba(255, 255, 255, 0.82);
+  box-shadow: 0 18px 34px rgba(128, 61, 94, 0.18);
+  image-rendering: pixelated;
 }
 
 .admin-actions {
