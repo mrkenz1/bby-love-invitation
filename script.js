@@ -52,7 +52,8 @@ const DEFAULT_DATA = {
       "./assets/user-gallery/photo-16.jpg",
       "./assets/user-gallery/photo-17.jpg",
       "./assets/user-gallery/photo-18.jpg",
-      "./assets/user-gallery/photo-19.jpg"
+      "./assets/user-gallery/photo-19.jpg",
+      "./assets/user-gallery/video3.mp4"
     ]
   },
   video: {
@@ -580,11 +581,18 @@ function getMemoryMediaSpec(url) {
   return { type: "image", src: value, poster: "" };
 }
 
-function buildUrlCandidates(url, extensions) {
+function buildUrlCandidates(url, extensions, options = {}) {
   const base = normalizeMediaResourceUrl(url);
-  const candidates = [base];
+  if (!base) return [];
+
+  const candidates = [];
   const extMatch = getMediaPath(base).match(/\.([a-z0-9]+)$/i);
   const currentExtension = extMatch ? extMatch[1].toLowerCase() : "";
+  const includeBase = options.includeBase !== false;
+
+  if (includeBase || (currentExtension && extensions.includes(currentExtension))) {
+    candidates.push(base);
+  }
 
   extensions.forEach((extension) => {
     if (!extension || extension === currentExtension) return;
@@ -753,7 +761,7 @@ function renderMemoryGrid(mediaUrls) {
       bindVideoFallback(
         video,
         buildUrlCandidates(media.src, VIDEO_MEDIA_EXTENSIONS),
-        buildUrlCandidates(media.poster || media.src, IMAGE_MEDIA_EXTENSIONS),
+        buildUrlCandidates(media.poster || media.src, IMAGE_MEDIA_EXTENSIONS, { includeBase: false }),
         label,
         shouldAutoplay
       );

@@ -17,3 +17,4 @@
 ./assets/user-gallery/photo-17.jpg
 ./assets/user-gallery/photo-18.jpg
 ./assets/user-gallery/photo-19.jpg
+./assets/user-gallery/video3.mp4
