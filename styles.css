@@ -234,6 +234,7 @@ body {
   overflow: hidden;
   background: #fff;
   box-shadow: 0 8px 20px rgba(120, 78, 94, 0.11);
+  position: relative;
 }
 
 .memory-card img,
@@ -244,8 +245,97 @@ body {
   object-fit: cover;
 }
 
+.memory-card img {
+  cursor: zoom-in;
+}
+
 .memory-card video {
   background: #000;
+}
+
+.memory-card-broken {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: linear-gradient(145deg, #fff7fb, #ffe6f1);
+  color: #7a4e63;
+  text-align: center;
+  padding: 1rem;
+  font-family: "Mulish", sans-serif;
+}
+
+.memory-card-broken strong {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.memory-card-broken small {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.76rem;
+  opacity: 0.85;
+}
+
+.memory-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(19, 8, 16, 0.84);
+  backdrop-filter: blur(10px);
+}
+
+.memory-lightbox[hidden] {
+  display: none;
+}
+
+.memory-lightbox-figure {
+  margin: 0;
+  width: min(96vw, 1120px);
+  max-height: calc(100vh - 2rem);
+  display: grid;
+  gap: 0.6rem;
+  justify-items: center;
+}
+
+.memory-lightbox-image {
+  max-width: 100%;
+  max-height: calc(100vh - 5rem);
+  width: auto;
+  height: auto;
+  border-radius: 18px;
+  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.36);
+  background: #fff;
+}
+
+.memory-lightbox-caption {
+  margin: 0;
+  color: #f9e9f1;
+  font-family: "Mulish", sans-serif;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.memory-lightbox-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.memory-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.24);
 }
 
 .songs-layout {
@@ -883,16 +973,19 @@ body {
   border: 1px dashed #e5c7d7;
   border-radius: 12px;
   background: #fff7fb;
-  min-height: 72px;
+  min-height: 160px;
   display: grid;
   place-items: center;
-  padding: 0.5rem;
+  padding: 0.85rem;
 }
 
 .admin-qr-preview {
-  width: min(220px, 100%);
+  width: min(280px, 100%);
   height: auto;
-  border-radius: 8px;
+  border-radius: 14px;
+  background: #fff;
+  padding: 0.6rem;
+  box-shadow: 0 12px 28px rgba(90, 50, 70, 0.12);
 }
 
 .admin-actions {

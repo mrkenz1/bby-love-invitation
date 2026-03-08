@@ -87,6 +87,10 @@ const els = {
   memoriesTitle: document.getElementById("memoriesTitle"),
   memoriesSubtitle: document.getElementById("memoriesSubtitle"),
   memoryGrid: document.getElementById("memoryGrid"),
+  memoryLightbox: document.getElementById("memoryLightbox"),
+  memoryLightboxImage: document.getElementById("memoryLightboxImage"),
+  memoryLightboxCaption: document.getElementById("memoryLightboxCaption"),
+  memoryLightboxClose: document.getElementById("memoryLightboxClose"),
   videoSection: document.getElementById("videoSection"),
   videoTitle: document.getElementById("videoTitle"),
   videoSubtitle: document.getElementById("videoSubtitle"),
@@ -171,6 +175,7 @@ let songWaveAnalyser = null;
 let songWaveAudioData = null;
 let songWaveAudioSource = null;
 let repeatCurrentSong = false;
+let currentQrPreviewUrl = "";
 const isAdmin = checkAdminAccess();
 
 siteData = loadInitialSiteData();
@@ -277,9 +282,110 @@ function fromBase64UrlToUtf8(token) {
   return new TextDecoder().decode(bytes);
 }
 
+function compactVideoItems(items) {
+  return (items || []).map((item) => [
+    cleanText(item?.title),
+    cleanText(item?.subtitle),
+    normalizeMediaResourceUrl(item?.url)
+  ]);
+}
+
+function expandVideoItems(items) {
+  return (items || []).map((item, index) => ({
+    title: cleanText(item?.[0], `Video ${index + 1}`),
+    subtitle: cleanText(item?.[1], "A special clip for us."),
+    url: normalizeMediaResourceUrl(item?.[2])
+  }));
+}
+
+function compactSongItems(items) {
+  return (items || []).map((item) => [
+    cleanText(item?.song),
+    cleanText(item?.artist),
+    normalizeMediaResourceUrl(item?.url)
+  ]);
+}
+
+function expandSongItems(items) {
+  return (items || []).map((item, index) => ({
+    song: cleanText(item?.[0], `Song ${index + 1}`),
+    artist: cleanText(item?.[1], "Unknown Artist"),
+    url: normalizeMediaResourceUrl(item?.[2])
+  }));
+}
+
+function compactDataForShare(data) {
+  const safe = normalizeData(data);
+  return {
+    v: 2,
+    t: [safe.theme.bg, safe.theme.accent, safe.theme.accentDeep],
+    h: [safe.hero.eyebrow, safe.hero.title, safe.hero.quote, safe.hero.buttonText],
+    l: [
+      safe.letter.sectionTitle,
+      safe.letter.sectionSubtitle,
+      safe.letter.heading,
+      safe.letter.preview,
+      safe.letter.body
+    ],
+    m: [
+      safe.memories.sectionTitle,
+      safe.memories.sectionSubtitle,
+      normalizeMemoryMediaItems(safe.memories.images, DEFAULT_DATA.memories.images)
+    ],
+    d: compactVideoItems(safe.video.items),
+    s: [
+      safe.songs.cardTitle,
+      safe.songs.cardSubtitle,
+      safe.songs.reasonsTitle,
+      safe.songs.closingLine,
+      compactSongItems(safe.songs.items)
+    ]
+  };
+}
+
+function expandCompactSharedData(payload) {
+  if (!payload || typeof payload !== "object" || payload.v !== 2) return null;
+
+  return {
+    theme: {
+      bg: cleanText(payload.t?.[0]),
+      accent: cleanText(payload.t?.[1]),
+      accentDeep: cleanText(payload.t?.[2])
+    },
+    hero: {
+      eyebrow: cleanText(payload.h?.[0]),
+      title: cleanText(payload.h?.[1]),
+      quote: cleanText(payload.h?.[2]),
+      buttonText: cleanText(payload.h?.[3])
+    },
+    letter: {
+      sectionTitle: cleanText(payload.l?.[0]),
+      sectionSubtitle: cleanText(payload.l?.[1]),
+      heading: cleanText(payload.l?.[2]),
+      preview: cleanText(payload.l?.[3]),
+      body: Array.isArray(payload.l?.[4]) ? payload.l[4].map((item) => cleanText(item)).filter(Boolean) : []
+    },
+    memories: {
+      sectionTitle: cleanText(payload.m?.[0]),
+      sectionSubtitle: cleanText(payload.m?.[1]),
+      images: Array.isArray(payload.m?.[2]) ? payload.m[2] : []
+    },
+    video: {
+      items: expandVideoItems(payload.d)
+    },
+    songs: {
+      cardTitle: cleanText(payload.s?.[0]),
+      cardSubtitle: cleanText(payload.s?.[1]),
+      reasonsTitle: cleanText(payload.s?.[2]),
+      closingLine: cleanText(payload.s?.[3]),
+      items: expandSongItems(payload.s?.[4])
+    }
+  };
+}
+
 function encodeSnapshotToken(data) {
   try {
-    return toBase64UrlFromUtf8(JSON.stringify(data));
+    return toBase64UrlFromUtf8(JSON.stringify(compactDataForShare(data)));
   } catch (error) {
     return "";
   }
@@ -288,7 +394,8 @@ function encodeSnapshotToken(data) {
 function decodeSnapshotToken(token) {
   try {
     const json = fromBase64UrlToUtf8(token);
-    return JSON.parse(json);
+    const parsed = JSON.parse(json);
+    return expandCompactSharedData(parsed) || parsed;
   } catch (error) {
     return null;
   }
@@ -315,7 +422,7 @@ function loadInitialSiteData() {
 function normalizeData(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
   const memoryImages = Array.isArray(source.memories?.images)
-    ? source.memories.images.map((item) => cleanText(item)).filter(Boolean)
+    ? normalizeMemoryMediaItems(source.memories.images, DEFAULT_DATA.memories.images)
     : [];
   const songItems = Array.isArray(source.songs?.items) ? source.songs.items : [];
   const videoItems = Array.isArray(source.video?.items) ? source.video.items : [];
@@ -343,7 +450,7 @@ function normalizeData(raw) {
     .map((item, index) => {
       const title = cleanText(item?.title, `Video ${index + 1}`);
       const subtitle = cleanText(item?.subtitle, "A special clip for us.");
-      const url = cleanText(item?.url);
+      const url = normalizeMediaResourceUrl(item?.url);
       return { title, subtitle, url };
     })
     .filter((item) => item.title || item.subtitle || item.url);
@@ -473,6 +580,139 @@ function getMemoryMediaSpec(url) {
   return { type: "image", src: value, poster: "" };
 }
 
+function buildUrlCandidates(url, extensions) {
+  const base = normalizeMediaResourceUrl(url);
+  const candidates = [base];
+  const extMatch = getMediaPath(base).match(/\.([a-z0-9]+)$/i);
+  const currentExtension = extMatch ? extMatch[1].toLowerCase() : "";
+
+  extensions.forEach((extension) => {
+    if (!extension || extension === currentExtension) return;
+    const candidate = normalizeMediaResourceUrl(replaceUrlExtension(base, extension));
+    if (candidate && !candidates.includes(candidate)) {
+      candidates.push(candidate);
+    }
+  });
+
+  return candidates;
+}
+
+function createBrokenMemoryPlaceholder(label, detail) {
+  const placeholder = document.createElement("div");
+  placeholder.className = "memory-card-broken";
+  placeholder.innerHTML = `<div><strong>${label}</strong><small>${detail}</small></div>`;
+  return placeholder;
+}
+
+function openMemoryLightbox(src, caption = "") {
+  if (!els.memoryLightbox || !els.memoryLightboxImage) return;
+  const imageSrc = cleanText(src);
+  if (!imageSrc) return;
+  els.memoryLightboxImage.src = imageSrc;
+  els.memoryLightboxImage.alt = cleanText(caption, "Full memory photo");
+  if (els.memoryLightboxCaption) {
+    els.memoryLightboxCaption.textContent = cleanText(caption);
+  }
+  els.memoryLightbox.hidden = false;
+  els.memoryLightbox.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+}
+
+function closeMemoryLightbox() {
+  if (!els.memoryLightbox || !els.memoryLightboxImage) return;
+  els.memoryLightbox.hidden = true;
+  els.memoryLightbox.setAttribute("aria-hidden", "true");
+  els.memoryLightboxImage.removeAttribute("src");
+  if (els.memoryLightboxCaption) {
+    els.memoryLightboxCaption.textContent = "";
+  }
+  document.body.style.overflow = "";
+}
+
+function bindImageFallback(img, candidates, fallbackLabel) {
+  let candidateIndex = 0;
+  const applyCandidate = () => {
+    const next = candidates[candidateIndex];
+    if (!next) {
+      const parent = img.parentElement;
+      if (parent) {
+        parent.replaceChildren(createBrokenMemoryPlaceholder(fallbackLabel, "Image file not found"));
+      }
+      return;
+    }
+    img.src = next;
+  };
+
+  img.addEventListener("load", () => {
+    const figure = img.closest(".memory-card");
+    if (!figure) return;
+    figure.dataset.fullsrc = img.currentSrc || img.src;
+  });
+
+  img.addEventListener("error", () => {
+    candidateIndex += 1;
+    applyCandidate();
+  });
+
+  applyCandidate();
+}
+
+function bindVideoFallback(video, videoCandidates, posterCandidates, fallbackLabel, shouldAutoplay) {
+  let videoIndex = 0;
+  let posterIndex = 0;
+
+  const tryPlay = () => {
+    if (shouldAutoplay) {
+      video.play().catch(() => {});
+    }
+  };
+
+  const applyVideoCandidate = () => {
+    const next = videoCandidates[videoIndex];
+    if (!next) {
+      const parent = video.parentElement;
+      if (!parent) return;
+
+      if (posterCandidates.length) {
+        const img = document.createElement("img");
+        img.alt = fallbackLabel;
+        parent.replaceChildren(img);
+        bindImageFallback(img, posterCandidates, fallbackLabel);
+        return;
+      }
+
+      parent.replaceChildren(createBrokenMemoryPlaceholder(fallbackLabel, "Video file not found"));
+      return;
+    }
+
+    video.src = next;
+    video.load();
+  };
+
+  if (posterCandidates.length) {
+    const applyPoster = () => {
+      const poster = posterCandidates[posterIndex];
+      if (!poster) return;
+      video.poster = poster;
+    };
+
+    video.addEventListener("error", () => {
+      posterIndex = Math.min(posterIndex + 1, posterCandidates.length - 1);
+      applyPoster();
+    });
+
+    applyPoster();
+  }
+
+  video.addEventListener("loadeddata", tryPlay);
+  video.addEventListener("error", () => {
+    videoIndex += 1;
+    applyVideoCandidate();
+  });
+
+  applyVideoCandidate();
+}
+
 function pauseOtherMemoryVideos(activeVideo) {
   if (!els.memoryGrid) return;
   els.memoryGrid.querySelectorAll("video").forEach((video) => {
@@ -490,32 +730,39 @@ function renderMemoryGrid(mediaUrls) {
     figure.className = "memory-card";
     const media = getMemoryMediaSpec(url);
     if (!media) return;
+    const label = media.type === "video" ? `Memory video ${index + 1}` : `Memory photo ${index + 1}`;
 
     if (media.type === "video") {
       figure.classList.add("memory-card-video");
       const video = document.createElement("video");
-      video.src = media.src;
       video.controls = true;
-      video.preload = "metadata";
+      video.preload = "auto";
       video.loop = true;
       video.muted = true;
       video.defaultMuted = true;
       video.playsInline = true;
       video.setAttribute("playsinline", "");
       video.setAttribute("muted", "");
-      video.setAttribute("aria-label", `Memory video ${index + 1}`);
-      if (media.poster) video.poster = media.poster;
-      if (!hasAutoplayVideo) {
+      video.setAttribute("aria-label", label);
+      const shouldAutoplay = !hasAutoplayVideo;
+      if (shouldAutoplay) {
         video.autoplay = true;
         hasAutoplayVideo = true;
       }
       video.addEventListener("play", () => pauseOtherMemoryVideos(video));
+      bindVideoFallback(
+        video,
+        buildUrlCandidates(media.src, VIDEO_MEDIA_EXTENSIONS),
+        buildUrlCandidates(media.poster || media.src, IMAGE_MEDIA_EXTENSIONS),
+        label,
+        shouldAutoplay
+      );
       figure.appendChild(video);
     } else {
       const img = document.createElement("img");
-      img.src = media.src;
-      img.alt = `Memory photo ${index + 1}`;
+      img.alt = label;
       img.loading = "lazy";
+      bindImageFallback(img, buildUrlCandidates(media.src, IMAGE_MEDIA_EXTENSIONS), label);
       figure.appendChild(img);
     }
 
@@ -814,7 +1061,7 @@ function normalizeSongItems(items, fallbackItems) {
     .map((item) => {
       const songRaw = cleanText(item?.song);
       const artistRaw = cleanText(item?.artist);
-      const urlRaw = cleanText(item?.url);
+      const urlRaw = normalizeMediaResourceUrl(item?.url);
       if (!songRaw && !artistRaw && !urlRaw) return null;
 
       const dedupKey = getSongDedupKey(songRaw, artistRaw, urlRaw);
@@ -1044,8 +1291,12 @@ function getShareLinks(data = siteData) {
   };
 }
 
-function getQrImageUrl(targetUrl) {
-  return `${QR_IMAGE_ENDPOINT}?size=900x900&format=png&data=${encodeURIComponent(targetUrl)}`;
+function getQrImageUrls(targetUrl) {
+  const encoded = encodeURIComponent(targetUrl);
+  return [
+    `${QR_IMAGE_ENDPOINT}?size=1200x1200&format=png&margin=20&data=${encoded}`,
+    `https://quickchart.io/qr?size=1200&format=png&margin=2&text=${encoded}`
+  ];
 }
 
 function resetIframe(iframe) {
@@ -1406,7 +1657,7 @@ function normalizeAdminVideoDraft(items) {
     .map((item, index) => {
       const titleRaw = cleanText(item?.title);
       const subtitleRaw = cleanText(item?.subtitle);
-      const urlRaw = cleanText(item?.url);
+      const urlRaw = normalizeMediaResourceUrl(item?.url);
       if (!titleRaw && !subtitleRaw && !urlRaw) return null;
       return {
         title: titleRaw || `Video ${index + 1}`,
@@ -1549,11 +1800,42 @@ function setAdminStatus(text, isError = false) {
 
 function setQrPreview(targetUrl) {
   if (!els.adminQrPreview || !els.downloadQrBtn) return;
-  const qrUrl = getQrImageUrl(targetUrl);
+  const qrUrls = getQrImageUrls(targetUrl);
+  let attemptIndex = 0;
+
+  const tryLoad = () => {
+    const qrUrl = qrUrls[attemptIndex];
+    if (!qrUrl) {
+      els.adminQrPreview.hidden = true;
+      els.adminQrPreview.removeAttribute("src");
+      els.downloadQrBtn.hidden = true;
+      els.downloadQrBtn.removeAttribute("href");
+      currentQrPreviewUrl = "";
+      setAdminStatus("QR could not be generated. Try Save first, then Generate QR again.", true);
+      return;
+    }
+
+    els.adminQrPreview.hidden = false;
+    els.adminQrPreview.src = qrUrl;
+  };
+
+  els.adminQrPreview.onload = () => {
+    currentQrPreviewUrl = els.adminQrPreview.currentSrc || els.adminQrPreview.src;
+    els.downloadQrBtn.hidden = false;
+    els.downloadQrBtn.href = currentQrPreviewUrl;
+    els.downloadQrBtn.download = els.adminQrTarget?.value === "admin" ? "bby-admin-qr.png" : "bby-public-qr.png";
+  };
+
+  els.adminQrPreview.onerror = () => {
+    attemptIndex += 1;
+    tryLoad();
+  };
+
+  els.downloadQrBtn.hidden = true;
+  els.downloadQrBtn.removeAttribute("href");
   els.adminQrPreview.hidden = false;
-  els.adminQrPreview.src = qrUrl;
-  els.downloadQrBtn.hidden = false;
-  els.downloadQrBtn.href = qrUrl;
+  currentQrPreviewUrl = "";
+  tryLoad();
 }
 
 function fillShareFields() {
@@ -1786,6 +2068,28 @@ function setupEvents() {
     });
   }
 
+  if (els.memoryGrid) {
+    els.memoryGrid.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLImageElement)) return;
+      const figure = target.closest(".memory-card");
+      const src = figure?.dataset.fullsrc || target.currentSrc || target.src;
+      openMemoryLightbox(src, target.alt || "");
+    });
+  }
+
+  if (els.memoryLightboxClose) {
+    els.memoryLightboxClose.addEventListener("click", closeMemoryLightbox);
+  }
+
+  if (els.memoryLightbox) {
+    els.memoryLightbox.addEventListener("click", (event) => {
+      if (event.target === els.memoryLightbox) {
+        closeMemoryLightbox();
+      }
+    });
+  }
+
   if (els.prevSongBtn) {
     els.prevSongBtn.addEventListener("click", () => {
       playPrevSong(true);
@@ -1851,6 +2155,12 @@ function setupEvents() {
       playNextVideo(true);
     });
   }
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && els.memoryLightbox && !els.memoryLightbox.hidden) {
+      closeMemoryLightbox();
+    }
+  });
 }
 
 buildHearts();
