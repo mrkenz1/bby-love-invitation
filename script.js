@@ -9,6 +9,7 @@ const QR_PINK_DARK = "214-33-94";
 const QR_PINK_LIGHT = "255-246-250";
 const PROFILE_QUERY_KEY = "pid";
 const DEFAULT_PROFILE_ID = "main";
+const GALLERY_MEDIA_PREFIX = "./assets/user-gallery/";
 const IMAGE_MEDIA_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "gif", "avif"];
 const VIDEO_MEDIA_EXTENSIONS = ["mp4", "webm", "ogg", "mov", "m4v"];
 
@@ -732,7 +733,7 @@ function compactVideoItems(items) {
   return (items || []).map((item) => [
     cleanText(item?.title),
     cleanText(item?.subtitle),
-    normalizeMediaResourceUrl(item?.url)
+    compactMediaReference(item?.url)
   ]);
 }
 
@@ -740,7 +741,7 @@ function expandVideoItems(items) {
   return (items || []).map((item, index) => ({
     title: cleanText(item?.[0], `Video ${index + 1}`),
     subtitle: cleanText(item?.[1], "A special clip for us."),
-    url: normalizeMediaResourceUrl(item?.[2])
+    url: expandMediaReference(item?.[2])
   }));
 }
 
@@ -748,7 +749,7 @@ function compactSongItems(items) {
   return (items || []).map((item) => [
     cleanText(item?.song),
     cleanText(item?.artist),
-    normalizeMediaResourceUrl(item?.url)
+    compactMediaReference(item?.url)
   ]);
 }
 
@@ -756,8 +757,45 @@ function expandSongItems(items) {
   return (items || []).map((item, index) => ({
     song: cleanText(item?.[0], `Song ${index + 1}`),
     artist: cleanText(item?.[1], "Unknown Artist"),
-    url: normalizeMediaResourceUrl(item?.[2])
+    url: expandMediaReference(item?.[2])
   }));
+}
+
+function compactMediaReference(value) {
+  const normalized = normalizeMediaResourceUrl(value);
+  if (!normalized) return "";
+
+  const youtubeId = extractYoutubeId(normalized);
+  if (youtubeId) return `y:${youtubeId}`;
+
+  if (normalized.startsWith(GALLERY_MEDIA_PREFIX)) {
+    return `g:${normalized.slice(GALLERY_MEDIA_PREFIX.length)}`;
+  }
+
+  if (normalized.startsWith("./")) {
+    return `r:${normalized.slice(2)}`;
+  }
+
+  if (isSoundCloudUrl(normalized)) {
+    try {
+      const parsed = new URL(normalized);
+      return `s:${parsed.pathname.replace(/^\/+/, "")}`;
+    } catch (error) {
+      return normalized;
+    }
+  }
+
+  return normalized;
+}
+
+function expandMediaReference(value) {
+  const raw = cleanText(value);
+  if (!raw) return "";
+  if (raw.startsWith("g:")) return normalizeMediaResourceUrl(`${GALLERY_MEDIA_PREFIX}${raw.slice(2)}`);
+  if (raw.startsWith("r:")) return normalizeMediaResourceUrl(`./${raw.slice(2)}`);
+  if (raw.startsWith("y:")) return normalizeMediaResourceUrl(`https://youtu.be/${raw.slice(2)}`);
+  if (raw.startsWith("s:")) return normalizeMediaResourceUrl(`https://soundcloud.com/${raw.slice(2)}`);
+  return normalizeMediaResourceUrl(raw);
 }
 
 function compactDataForShare(data) {
@@ -776,7 +814,7 @@ function compactDataForShare(data) {
     m: [
       safe.memories.sectionTitle,
       safe.memories.sectionSubtitle,
-      normalizeMemoryMediaItems(safe.memories.images, DEFAULT_DATA.memories.images)
+      normalizeMemoryMediaItems(safe.memories.images, DEFAULT_DATA.memories.images).map((item) => compactMediaReference(item))
     ],
     d: compactVideoItems(safe.video.items),
     s: [
@@ -842,7 +880,7 @@ function expandCompactSharedData(payload) {
     memories: {
       sectionTitle: cleanText(payload.m?.[0]),
       sectionSubtitle: cleanText(payload.m?.[1]),
-      images: Array.isArray(payload.m?.[2]) ? payload.m[2] : []
+      images: Array.isArray(payload.m?.[2]) ? payload.m[2].map((item) => expandMediaReference(item)) : []
     },
     video: {
       items: expandVideoItems(payload.d)
@@ -1778,10 +1816,10 @@ function getBasePageUrl() {
   return `${window.location.origin}${window.location.pathname}`;
 }
 
-function buildPageUrl({ admin = false, profileId = activeProfileId, snapshotToken = "" } = {}) {
+function buildPageUrl({ admin = false, profileId = activeProfileId, snapshotToken = "", includeProfile = true } = {}) {
   const url = new URL(getBasePageUrl());
   const normalizedProfileId = slugifyProfileId(profileId);
-  if (normalizedProfileId) {
+  if (includeProfile && normalizedProfileId) {
     url.searchParams.set(PROFILE_QUERY_KEY, normalizedProfileId);
   }
   if (admin) {
@@ -1794,13 +1832,13 @@ function buildPageUrl({ admin = false, profileId = activeProfileId, snapshotToke
 }
 
 function syncProfileUrl({ admin = isAdmin, snapshotToken = "" } = {}) {
-  const nextUrl = buildPageUrl({ admin, snapshotToken });
+  const nextUrl = buildPageUrl({ admin, snapshotToken, includeProfile: admin });
   window.history.replaceState({}, "", nextUrl);
 }
 
 function getShareLinks(data = siteData) {
   const snapshotToken = encodeSnapshotToken(data);
-  const publicLink = buildPageUrl({ admin: false, snapshotToken });
+  const publicLink = buildPageUrl({ admin: false, snapshotToken, includeProfile: false });
   return {
     publicLink,
     adminLink: buildPageUrl({ admin: true }),
